@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import tomllib
 
@@ -18,10 +19,9 @@ def main() -> int:
 	)
 
 	# TODO: Integrate wipe workflow modules as implementation progresses.
-	# (drive_detection, wipe_engine, recovery, verification, reporting, uploader)
+	# (wipe_engine, recovery, verification, reporting, uploader)
 
 	drives = drive_detection.detect_drives()
-	print(f"Detected drives: {drives}")
 	return 0
 
 
