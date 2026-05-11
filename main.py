@@ -1,5 +1,6 @@
 import sys
 import tomllib
+import subprocess
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine
 
@@ -11,15 +12,21 @@ def main() -> int:
 		print(f"Configuration error: {exc}", file=sys.stderr)
 		return 1
 
-	print(
-		"Loaded configuration: "
-		f"environment={app_config.runtime.environment}, "
-		f"dry_run={app_config.runtime.dry_run}"
-	)
+	subprocess.run(["tput", "smcup"], check=False) # Switch to alternate screen buffer
 
-	# TODO: Integrate wipe workflow modules as implementation progresses.
-	# (drive_detection, wipe_engine, recovery, verification, reporting, uploader)
-	return 0
+	try: 
+		print(
+			"Loaded configuration: "
+			f"environment={app_config.runtime.environment}, "
+			f"dry_run={app_config.runtime.dry_run}"
+		)
+
+		# TODO: Integrate wipe workflow modules as implementation progresses.
+		# (drive_detection, wipe_engine, recovery, verification, reporting, uploader)
+		return 0
+	
+	finally:
+		subprocess.run(["tput", "rmcup"], check=False) # Restore original screen buffer
 
 
 if __name__ == "__main__":
