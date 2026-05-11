@@ -32,7 +32,7 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 ## What's Next
 
 **Immediate (Phase 1 - Starting Now):**
-1. `modules/config.py` — Configuration management (start here)
+1. `modules/config.py` — Configuration management
 2. `modules/drive_detection.py` — Hardware enumeration
 3. `main.py` — CLI orchestration and menu system
 4. Hardware validation testing

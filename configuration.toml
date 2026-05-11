@@ -1,0 +1,23 @@
+# SecureWipe user-facing configuration
+# Only a subset of settings are exposed here.
+# Internal defaults and safety baselines remain in modules/config.py.
+
+[runtime]
+environment = "dev"   # dev | test | prod
+dry_run = true
+
+[safety]
+# Safety modes for mounted and removable drives.
+# Use deny (recommended) by default, confirm for guarded exceptions,
+# or allow only in tightly controlled workflows.
+# Confirmation steps are for all operations, including dry runs, to ensure user awareness.
+removable_drive_mode = "DENY"   # deny (recommended) | confirm | allow
+mount_handling_mode = "deny"   # deny (recommended) | confirm | allow
+confirmation_steps = 2          # 2 (recommended) | 1 | 0
+
+[reporting]
+formats = ["json", "txt"]  # json | txt
+
+[logging]
+level = "INFO"          # DEBUG | INFO | WARNING | ERROR | CRITICAL
+console_level = "INFO"  # DEBUG | INFO | WARNING | ERROR | CRITICAL
