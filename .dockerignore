@@ -1,0 +1,16 @@
+logs/
+reports/
+state/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.git/
+.gitignore
+README.md
+.env
+.venv
+venv/
+.DS_Store
+*.swp
