@@ -29,6 +29,10 @@ class SafetyConfig:
     confirmation_steps: int = 2 # 0 = none, 1 = single prompt: [y]es/[n]o, 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm (Recommended)
 
 @dataclass
+class DriveDetectionConfig:
+    collect_smart_info: bool = True
+
+@dataclass
 class WipeConfig:
     method: str = "cryptographic"  # cryptographic, overwrite, hybrid
     overwrite_passes: int = 3
@@ -77,6 +81,7 @@ class AppConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
+    drive_detection: DriveDetectionConfig = field(default_factory=DriveDetectionConfig)
     wipe: WipeConfig = field(default_factory=WipeConfig)
     verification: VerificationConfig = field(default_factory=VerificationConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
@@ -90,6 +95,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configuration.to
 _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "runtime": {"environment", "dry_run"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
+    "drive_detection": {"collect_smart_info"},
     "reporting": {"formats"},
     "logging": {"level", "console_level"},
 }
@@ -109,6 +115,11 @@ def _apply_safety_overrides(config: AppConfig, safety_data: dict[str, Any]) -> N
         config.safety.mount_handling_mode = str(safety_data["mount_handling_mode"]).lower()
     if "confirmation_steps" in safety_data:
         config.safety.confirmation_steps = int(safety_data["confirmation_steps"])
+
+
+def _apply_drive_detection_overrides(config: AppConfig, drive_detection_data: dict[str, Any]) -> None:
+    if "collect_smart_info" in drive_detection_data:
+        config.drive_detection.collect_smart_info = bool(drive_detection_data["collect_smart_info"])
 
 
 def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
@@ -155,6 +166,9 @@ def _validate_config(config: AppConfig) -> None:
     if config.safety.confirmation_steps not in {0, 1, 2}:
         raise ValueError("safety.confirmation_steps must be 0, 1, or 2")
 
+    if not isinstance(config.drive_detection.collect_smart_info, bool):
+        raise ValueError("drive_detection.collect_smart_info must be a boolean")
+
     valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
     if config.logging.level.upper() not in valid_levels:
         raise ValueError("logging.level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
@@ -193,6 +207,9 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
 
         safety_data = raw_data.get("safety", {})
         _apply_safety_overrides(config, safety_data)
+
+        drive_detection_data = raw_data.get("drive_detection", {})
+        _apply_drive_detection_overrides(config, drive_detection_data)
 
         reporting_data = raw_data.get("reporting", {})
         _apply_reporting_overrides(config, reporting_data)

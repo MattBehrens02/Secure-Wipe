@@ -22,9 +22,6 @@ def main() -> int:
 			f"dry_run={app_config.runtime.dry_run}"
 		)
 
-		# TODO: Integrate wipe workflow modules as implementation progresses.
-		# (wipe_engine, recovery, verification, reporting, uploader)
-
 		selected_drives = drive_detection.run(app_config)
 		if selected_drives == []:
 			print("No drives detected.")
