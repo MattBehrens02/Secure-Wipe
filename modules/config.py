@@ -23,8 +23,8 @@ class RuntimeConfig:
 @dataclass
 class SafetyConfig:
     require_explicit_device_selection: bool = True
-    mount_handling_mode: str = "deny"  # deny | confirm | allow
-    removable_drive_mode: str = "deny"     # deny | confirm | allow
+    mount_handling_mode: str = "deny"  # deny | allow
+    removable_drive_mode: str = "deny"     # deny | allow
     protected_device_patterns: List[str] = field(default_factory=lambda: ["/dev/sda", "/dev/nvme0n1"])
     confirmation_steps: int = 2 # 0 = none, 1 = single prompt: [y]es/[n]o, 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm (Recommended)
 
@@ -146,11 +146,11 @@ def _validate_config(config: AppConfig) -> None:
     if config.runtime.environment not in {"dev", "test", "prod"}:
         raise ValueError("runtime.environment must be one of: dev, test, prod")
 
-    valid_modes = {"deny", "confirm", "allow"}
+    valid_modes = {"deny", "allow"}
     if config.safety.removable_drive_mode not in valid_modes:
-        raise ValueError("safety.removable_drive_mode must be one of: deny, confirm, allow")
+        raise ValueError("safety.removable_drive_mode must be one of: deny, allow")
     if config.safety.mount_handling_mode not in valid_modes:
-        raise ValueError("safety.mount_handling_mode must be one of: deny, confirm, allow")
+        raise ValueError("safety.mount_handling_mode must be one of: deny, allow")
 
     if config.safety.confirmation_steps not in {0, 1, 2}:
         raise ValueError("safety.confirmation_steps must be 0, 1, or 2")
