@@ -127,7 +127,7 @@ def normalize_drives(fetched_drives: Any) -> list[Drive]:
 
 # Print a menu of available drives for user selection.
 def print_menu_options(drives: list[Drive]) -> None:
-    print("Available Drives:\n")
+    print("\nAvailable Drives:\n")
     menu_index = 0
 
     print(f" {'Drive Name':<37} {'Path':<15} {'Size':>6} Type")
@@ -224,12 +224,19 @@ def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
     if steps <= 0:
         return True
     
-    print("\nYou have selected the following drives:")
+    subprocess.run("clear")  # Clear the screen to make the warning more prominent
+
+    if len(selected_drives) > 1:
+        print("\nWARNING: You have selected multiple drives")
+        print("\nYou have selected the following drives for wiping:")
+    else:
+        print("\nYou have selected the following drive for wiping:")
+
     for drive in selected_drives:
         print(f"- {drive.path} ({drive.size}, {'Removable' if drive.removable else 'Fixed'})")
 
     if steps >= 1:
-        first = input("Proceed with wiping these drives? [y/N]: ").strip().lower()
+        first = input("\nProceed with wiping these drives? [y/N]: ").strip().lower()
         if first not in {"y", "yes"}:
             return False
         

@@ -2,7 +2,9 @@ import subprocess
 import sys
 import tomllib
 
-from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine
+from pathlib import Path
+
+from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header
 
 
 def main() -> int:
@@ -14,6 +16,8 @@ def main() -> int:
 
 	if not app_config.runtime.environment == "dev": 
 		subprocess.run(["tput", "smcup"], check=False) # Switch to alternate screen buffer
+
+	header.print_header()
 
 	try: 
 		print(
