@@ -56,6 +56,7 @@ class RecoveryConfig:
 @dataclass
 class ReportingConfig:
     formats: List[str] = field(default_factory=lambda: ["json", "txt"])
+    detail_level: str = "verbose"  # minimal | standard | verbose
     include_hardware_fingerprint: bool = True
     redact_sensitive_fields: bool = True
 
@@ -96,7 +97,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "runtime": {"environment", "dry_run"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
-    "reporting": {"formats"},
+    "reporting": {"formats", "detail_level"},
     "logging": {"level", "console_level"},
 }
 
@@ -144,6 +145,8 @@ def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
 def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]) -> None:
     if "formats" in reporting_data:
         config.reporting.formats = list(reporting_data["formats"])
+    if "detail_level" in reporting_data:
+        config.reporting.detail_level = str(reporting_data["detail_level"]).lower()
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
@@ -181,6 +184,10 @@ def _validate_config(config: AppConfig) -> None:
     for report_format in config.reporting.formats:
         if str(report_format) not in valid_formats:
             raise ValueError("reporting.formats can only contain: json, txt")
+
+    valid_detail_levels = {"minimal", "standard", "verbose"}
+    if config.reporting.detail_level not in valid_detail_levels:
+        raise ValueError("reporting.detail_level must be one of: minimal, standard, verbose")
 
 
 def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
