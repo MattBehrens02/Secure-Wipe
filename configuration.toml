@@ -19,6 +19,7 @@ confirmation_steps = 2          # 2 (recommended) | 1 | 0
 collect_smart_info = true  # enabled by default; SMART collection is optional enrichment
 
 [reporting]
+reports_enabled = false       # true | false
 formats = ["json", "txt"]  # json | txt
 detail_level = "verbose"     # minimal | standard | verbose
 
