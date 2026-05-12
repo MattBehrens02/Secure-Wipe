@@ -11,8 +11,8 @@ dry_run = true
 # Use deny (recommended) by default, confirm for guarded exceptions,
 # or allow only in tightly controlled workflows.
 # Confirmation steps are for all operations, including dry runs, to ensure user awareness.
-removable_drive_mode = "deny"   # deny (recommended) | confirm | allow
-mount_handling_mode = "deny"   # deny (recommended) | confirm | allow
+removable_drive_mode = "deny"   # deny (recommended) | allow
+mount_handling_mode = "deny"   # deny (recommended) | allow
 confirmation_steps = 2          # 2 (recommended) | 1 | 0
 
 [reporting]
