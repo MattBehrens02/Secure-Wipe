@@ -27,6 +27,10 @@ def main() -> int:
 			print("No drives detected.")
 			return 1
 
+		if app_config.reporting.reports_enabled:
+			report_path = reporting.generate_detection_json_report(app_config, selected_drives)
+			print(f"Detection report written to: {report_path}")
+
 		# wipe_drives(selected_drive, app_config.wipe)
 	
 	finally:
