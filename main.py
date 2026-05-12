@@ -1,6 +1,6 @@
+import subprocess
 import sys
 import tomllib
-import subprocess
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine
 
@@ -12,7 +12,8 @@ def main() -> int:
 		print(f"Configuration error: {exc}", file=sys.stderr)
 		return 1
 
-	subprocess.run(["tput", "smcup"], check=False) # Switch to alternate screen buffer
+	if not app_config.runtime.environment == "dev": 
+		subprocess.run(["tput", "smcup"], check=False) # Switch to alternate screen buffer
 
 	try: 
 		print(
@@ -22,11 +23,20 @@ def main() -> int:
 		)
 
 		# TODO: Integrate wipe workflow modules as implementation progresses.
-		# (drive_detection, wipe_engine, recovery, verification, reporting, uploader)
-		return 0
+		# (wipe_engine, recovery, verification, reporting, uploader)
+
+		selected_drives = drive_detection.run(app_config)
+		if selected_drives == []:
+			print("No drives detected.")
+			return 1
+
+		# wipe_drives(selected_drive, app_config.wipe)
 	
 	finally:
-		subprocess.run(["tput", "rmcup"], check=False) # Restore original screen buffer
+		if not app_config.runtime.environment == "dev":
+			subprocess.run(["tput", "rmcup"], check=False) # Restore original screen buffer
+
+	return 0
 
 
 if __name__ == "__main__":
