@@ -19,11 +19,41 @@ class Drive:
     removable: bool
     transport: str
 
+# Main function to run the drive detection and selection workflow. 
+# Returns a list of selected Drive instances or an empty list if no drives were selected or an error occurred.
+def run(app_config: Any = None):
+    try:
+        fetched_drives = detect_drives()
+    except DriveDetectionError as exc:
+        print(f"Drive detection error: {exc}")
+        return []
 
+    formatted_drives = normalize_drives(fetched_drives)
+
+    if app_config is not None:
+        formatted_drives = _apply_safety_policy(formatted_drives, app_config)
+
+    selected_drives = get_user_input(formatted_drives)
+    if not selected_drives:
+        print("No drives selected. Exiting.")
+        return []
+
+    # Show a single warning if any selected drive is removable or mounted
+    if app_config is not None:
+        warn_if_risky_drives(selected_drives)
+
+    if app_config is not None and not confirm_all_drives(selected_drives, app_config):
+        print("Confirmation failed. Exiting.")
+        return []
+
+    print(f"Selected drive(s) for wiping: {[drive.path for drive in selected_drives]}")
+    return selected_drives
+
+# Return True if the drive has any mountpoints (i.e., is mounted), otherwise False.
 def _is_mounted(drive: Drive) -> bool:
     return bool(drive.mountpoints)
 
-
+# Check if a drive is blocked by safety configuration (removable/mounted) and return a tuple of (is_blocked, reason).
 def _is_blocked_by_safety_modes(drive: Drive, app_config: Any) -> tuple[bool, str]:
     safety = app_config.safety
 
@@ -35,46 +65,7 @@ def _is_blocked_by_safety_modes(drive: Drive, app_config: Any) -> tuple[bool, st
 
     return False, ""
 
-
-def _requires_extra_confirmation(drive: Drive, app_config: Any) -> bool:
-    safety = app_config.safety
-
-    removable_confirm = drive.removable and safety.removable_drive_mode == "confirm"
-    mounted_confirm = _is_mounted(drive) and safety.mount_handling_mode == "confirm"
-    return removable_confirm or mounted_confirm
-
-
-def _confirm_risky_selections(selected_drives: list[Drive], app_config: Any) -> bool:
-    risky_drives = [drive for drive in selected_drives if _requires_extra_confirmation(drive, app_config)]
-    if not risky_drives:
-        return True
-
-    steps = int(app_config.safety.confirmation_steps)
-    if steps <= 0:
-        return True
-
-    print("\nWarning: one or more selected drives require extra confirmation based on safety mode.")
-    for drive in risky_drives:
-        flags = []
-        if drive.removable and app_config.safety.removable_drive_mode == "confirm":
-            flags.append("removable")
-        if _is_mounted(drive) and app_config.safety.mount_handling_mode == "confirm":
-            flags.append("mounted")
-        flag_text = ", ".join(flags)
-        print(f"- {drive.path} ({flag_text})")
-
-    first = input("Proceed with these risky selections? [y/N]: ").strip().lower()
-    if first not in {"y", "yes"}:
-        return False
-
-    if steps >= 2:
-        second = input("Type WIPE to confirm risky selections: ").strip()
-        if second != "WIPE":
-            return False
-
-    return True
-
-
+# Filter out drives that are blocked by safety policy (removable/mounted) and return the list of eligible drives.
 def _apply_safety_policy(formatted_drives: list[Drive], app_config: Any) -> list[Drive]:
     eligible_drives: list[Drive] = []
 
@@ -88,7 +79,11 @@ def _apply_safety_policy(formatted_drives: list[Drive], app_config: Any) -> list
     return eligible_drives
 
 # Normalizes raw drive data from lsblk into a consistent Drive dataclass instance.
-def _normalize_drive_data(drive_data: dict) -> Drive:
+def normalize_drive_data(drive_data: Any) -> Drive | None:
+    # Ignore unexpected items and non-disk entries.
+    if not isinstance(drive_data, dict) or drive_data.get("type") != "disk":
+        return None
+
     raw_mountpoints = drive_data.get("mountpoints") or []
     mountpoints = [mp for mp in raw_mountpoints if mp] if isinstance(raw_mountpoints, list) else []
 
@@ -105,7 +100,23 @@ def _normalize_drive_data(drive_data: dict) -> Drive:
         transport=drive_data.get("tran", "") or "",
     )
 
-# Displays a user-friendly menu of detected drives and prompts for selection.
+
+def normalize_drives(fetched_drives: Any) -> list[Drive]:
+    """Convert raw lsblk payload into a list of normalized disk Drive objects."""
+    if not isinstance(fetched_drives, dict):
+        return []
+
+    blockdevices = fetched_drives.get("blockdevices", [])
+    if not isinstance(blockdevices, list):
+        return []
+
+    return [
+        normalized
+        for normalized in (normalize_drive_data(drive) for drive in blockdevices)
+        if normalized is not None
+    ]
+
+# Print a menu of available drives for user selection.
 def print_menu_options(drives: list[Drive]) -> None:
     print("Available Drives:\n")
     menu_index = 0
@@ -158,7 +169,7 @@ def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
 
     return []
 
-# Detects drives using lsblk and returns a list of normalized Drive instances.
+# Detects drives using lsblk and returns the parsed JSON output. Raises DriveDetectionError on failure.
 def detect_drives() -> dict[str, Any]:
     try:
         result = subprocess.run(
@@ -184,45 +195,38 @@ def detect_drives() -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise DriveDetectionError(f"failed to parse lsblk output: {exc}") from exc
 
-# Main function to run the drive detection and selection workflow. 
-# Returns a list of selected Drive instances or an empty list if no drives were selected or an error occurred.
-def run(app_config: Any = None):
-    try:
-        fetched_drives = detect_drives()
-    except DriveDetectionError as exc:
-        print(f"Drive detection error: {exc}")
-        return []
+def warn_if_risky_drives(selected_drives: list[Drive]) -> None:
+    risky = [d for d in selected_drives if d.removable or _is_mounted(d)]
+    if risky:
+        print("\nWARNING: You have selected one or more removable or mounted drives. Wiping these may be risky!")
+        for d in risky:
+            flags = []
+            if d.removable:
+                flags.append("removable")
+            if _is_mounted(d):
+                flags.append("mounted")
+            print(f"- {d.path} ({', '.join(flags)})")
 
-    blockdevices = fetched_drives.get("blockdevices", [])
-    formatted_drives = [
-        _normalize_drive_data(drive)
-        for drive in blockdevices
-        if isinstance(drive, dict) and drive.get("type") == "disk"
-    ]
+# Ask the user for confirmation before proceeding with wiping the selected drives.
+# The number of confirmation steps is controlled by app_config.safety.confirmation_steps.
+def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
+    steps = int(app_config.safety.confirmation_steps)
 
-    if app_config is not None:
-        formatted_drives = _apply_safety_policy(formatted_drives, app_config)
-
-    selected_drives = get_user_input(formatted_drives)
-    if not selected_drives:
-        print("No drives selected. Exiting.")
-        return []
-
-    if app_config is not None and not _confirm_risky_selections(selected_drives, app_config):
-        print("Risk confirmation failed. Exiting.")
-        return []
-
-    if not _confirm_all_drives(selected_drives):
-        print("Global confirmation failed. Exiting.")
-        return []
-
-    print(f"Selected drive(s) for wiping: {[drive.path for drive in selected_drives]}")
-    return selected_drives
-
-def _confirm_all_drives(selected_drives: list[Drive]) -> bool:
+    if steps <= 0:
+        return True
+    
     print("\nYou have selected the following drives:")
     for drive in selected_drives:
         print(f"- {drive.path} ({drive.size}, {'Removable' if drive.removable else 'Fixed'})")
 
-    confirmation = input("Are you sure you want to proceed with these drives? Type 'YES' to confirm: ").strip()
-    return confirmation == "YES"
+    if steps >= 1:
+        first = input("Proceed with wiping these drives? [y/N]: ").strip().lower()
+        if first not in {"y", "yes"}:
+            return False
+        
+    if steps >= 2:
+        second = input("Type WIPE to confirm wiping the selected drives: ").strip().lower()
+        if second != "wipe":
+            return False
+
+    return True
