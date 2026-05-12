@@ -3,6 +3,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from modules import config
 from modules.smartctl import collect_smart_snapshot
 from modules.smartctl import collect_smart_info
 
@@ -224,7 +225,8 @@ def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
     if steps <= 0:
         return True
     
-    subprocess.run("clear")  # Clear the screen to make the warning more prominent
+    if app_config.runtime.environment != "dev":
+        subprocess.run("clear")  # Clear the screen to make the warning more prominent
 
     if len(selected_drives) > 1:
         print("\nWARNING: You have selected multiple drives")
