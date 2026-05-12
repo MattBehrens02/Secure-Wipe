@@ -20,6 +20,7 @@ collect_smart_info = true  # enabled by default; SMART collection is optional en
 
 [reporting]
 formats = ["json", "txt"]  # json | txt
+detail_level = "verbose"     # minimal | standard | verbose
 
 [logging]
 level = "INFO"          # DEBUG | INFO | WARNING | ERROR | CRITICAL
