@@ -35,6 +35,9 @@ def main() -> int:
 			report_path = reporting.generate_detection_json_report(app_config, selected_drives)
 			print(f"Detection report written to: {report_path}")
 
+		if not app_config.runtime.dry_run:
+			print("\n[STUB] Starting drive wiping process...")
+
 		# wipe_drives(selected_drive, app_config.wipe)
 	
 	finally:

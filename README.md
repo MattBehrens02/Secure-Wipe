@@ -9,8 +9,8 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 | Phase | Status | Est. Hours |
 |-------|--------|-----------|
 | Docker & Project Setup | ✅ Complete | ~4h |
-| Phase 1: Drive Detection + CLI | 🔄 In Progress | ~15h |
-| Phase 2: Wipe Engine | ⏳ Pending | ~35h |
+| Phase 1: Drive Detection + CLI | ⏸️ Paused | ~15h |
+| Phase 2: Wipe Engine | 🔄 In Progress | ~35h |
 | Phase 3: Verification & Reporting | ⏳ Pending | ~25h |
 | Phase 4: Hardening & Testing | ⏳ Pending | ~15h |
 
