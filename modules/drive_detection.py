@@ -3,6 +3,9 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from modules.smartctl import collect_smart_snapshot
+from modules.smartctl import collect_smart_info
+
 class DriveDetectionError(Exception):
     pass
 
@@ -18,6 +21,7 @@ class Drive:
     mountpoints: list
     removable: bool
     transport: str
+    smart_data: dict[str, Any] | None = None
 
 # Main function to run the drive detection and selection workflow. 
 # Returns a list of selected Drive instances or an empty list if no drives were selected or an error occurred.
@@ -41,6 +45,11 @@ def run(app_config: Any = None):
     # Show a single warning if any selected drive is removable or mounted
     if app_config is not None:
         warn_if_risky_drives(selected_drives)
+
+    if app_config is not None and app_config.drive_detection.collect_smart_info:
+        smart_snapshot = collect_smart_snapshot([drive.path for drive in selected_drives])
+        for drive in selected_drives:
+            drive.smart_data = smart_snapshot.get(drive.path)
 
     if app_config is not None and not confirm_all_drives(selected_drives, app_config):
         print("Confirmation failed. Exiting.")

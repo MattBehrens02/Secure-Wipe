@@ -15,6 +15,9 @@ removable_drive_mode = "deny"   # deny (recommended) | allow
 mount_handling_mode = "deny"   # deny (recommended) | allow
 confirmation_steps = 2          # 2 (recommended) | 1 | 0
 
+[drive_detection]
+collect_smart_info = true  # enabled by default; SMART collection is optional enrichment
+
 [reporting]
 formats = ["json", "txt"]  # json | txt
 
