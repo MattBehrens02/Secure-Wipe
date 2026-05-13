@@ -22,7 +22,73 @@ class Drive:
     mountpoints: list
     removable: bool
     transport: str
+    rotational: bool | None
+    media_type: str = "Unknown"
     smart_data: dict[str, Any] | None = None
+
+
+def _coerce_rotational(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y"}:
+            return True
+        if lowered in {"0", "false", "no", "n"}:
+            return False
+    return None
+
+
+def _infer_media_type(drive: Drive) -> str:
+    transport = (drive.transport or "").strip().lower()
+    name_blob = " ".join(
+        [
+            (drive.name or "").lower(),
+            (drive.vendor or "").lower(),
+            (drive.model or "").lower(),
+        ]
+    )
+    if transport == "nvme" or drive.path.startswith("/dev/nvme"):
+        return "NVMe"
+
+    flash_markers = (
+        "flash",
+        "thumb",
+        "pen",
+        "ufd",
+        "microsd",
+        "sd",
+        "sdxc",
+        "sdhc",
+    )
+    looks_like_flash = any(marker in name_blob for marker in flash_markers)
+
+    if drive.removable and transport == "usb":
+        if drive.rotational is False or looks_like_flash:
+            return "Flash"
+        if drive.rotational is True:
+            return "USB-HDD"
+        return "USB"
+
+    if drive.rotational is True:
+        return "HDD"
+    if drive.rotational is False:
+        return "SSD"
+
+    smart_data = drive.smart_data if isinstance(drive.smart_data, dict) else None
+    if smart_data:
+        if isinstance(smart_data.get("nvme_smart_health_information_log"), dict):
+            return "NVMe"
+
+        rotation_rate = smart_data.get("rotation_rate")
+        if isinstance(rotation_rate, (int, float)) and rotation_rate > 0:
+            return "HDD"
+
+    return "Unknown"
 
 # Main function to run the drive detection and selection workflow. 
 # Returns a list of selected Drive instances or an empty list if no drives were selected or an error occurred.
@@ -51,6 +117,7 @@ def run(app_config: Any = None):
         smart_snapshot = collect_smart_snapshot([drive.path for drive in selected_drives])
         for drive in selected_drives:
             drive.smart_data = smart_snapshot.get(drive.path)
+            drive.media_type = _infer_media_type(drive)
 
     if app_config is not None and not confirm_all_drives(selected_drives, app_config):
         print("Confirmation failed. Exiting.")
@@ -97,7 +164,7 @@ def normalize_drive_data(drive_data: Any) -> Drive | None:
     raw_mountpoints = drive_data.get("mountpoints") or []
     mountpoints = [mp for mp in raw_mountpoints if mp] if isinstance(raw_mountpoints, list) else []
 
-    return Drive(
+    normalized = Drive(
         name=drive_data.get("name", "") or "",
         path=drive_data.get("path", "") or "",
         size=drive_data.get("size", "") or "",
@@ -108,7 +175,11 @@ def normalize_drive_data(drive_data: Any) -> Drive | None:
         mountpoints=mountpoints,
         removable=bool(drive_data.get("rm", 0)),
         transport=drive_data.get("tran", "") or "",
+        rotational=_coerce_rotational(drive_data.get("rota")),
     )
+
+    normalized.media_type = _infer_media_type(normalized)
+    return normalized
 
 
 def normalize_drives(fetched_drives: Any) -> list[Drive]:
@@ -131,15 +202,18 @@ def print_menu_options(drives: list[Drive]) -> None:
     print("\nAvailable Drives:\n")
     menu_index = 0
 
-    print(f" {'Drive Name':<37} {'Path':<15} {'Size':>6} Type")
-    print("-" * 70)
+    print(f" {'Drive Name':<37} {'Path':<15} {'Size':>6} {'Media':<6} Type")
+    print("-" * 78)
 
     # List drives with indices
     for drive in drives:
         menu_index += 1
         menu_index_str = f"[{menu_index}]"
         drive_name = f"{drive.vendor} {drive.model}".strip() or "Unknown Drive"
-        print(f" {menu_index_str:>4} {drive_name:<32} {drive.path:<15} {drive.size:>6} ({'Removable' if drive.removable else 'Fixed'})")
+        print(
+            f" {menu_index_str:>4} {drive_name:<32} {drive.path:<15} {drive.size:>6} "
+            f"{drive.media_type:<6} ({'Removable' if drive.removable else 'Fixed'})"
+        )
 
 # Prompts the user to select one or more drives from the menu and returns the selected Drive instances.
 def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
@@ -183,7 +257,7 @@ def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
 def detect_drives() -> dict[str, Any]:
     try:
         result = subprocess.run(
-            ['lsblk', '--json', '--output', 'NAME,PATH,SIZE,MODEL,VENDOR,SERIAL,TYPE,MOUNTPOINTS,RM,TRAN'],
+            ['lsblk', '--json', '--output', 'NAME,PATH,SIZE,MODEL,VENDOR,SERIAL,TYPE,MOUNTPOINTS,RM,TRAN,ROTA'],
             capture_output=True,
             text=True,
             check=True,
@@ -217,6 +291,14 @@ def warn_if_risky_drives(selected_drives: list[Drive]) -> None:
                 flags.append("mounted")
             print(f"- {d.path} ({', '.join(flags)})")
 
+
+def _print_confirm_risk_banner(selected_drives: list[Drive]) -> None:
+    risky = [d for d in selected_drives if d.removable or _is_mounted(d)]
+    if not risky:
+        return
+
+    print("\nDANGER: REMOVABLE OR MOUNTED DRIVES SELECTED - HIGH RISK OPERATION")
+
 # Ask the user for confirmation before proceeding with wiping the selected drives.
 # The number of confirmation steps is controlled by app_config.safety.confirmation_steps.
 def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
@@ -227,6 +309,8 @@ def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
     
     if app_config.runtime.environment != "dev":
         subprocess.run("clear")  # Clear the screen to make the warning more prominent
+
+    _print_confirm_risk_banner(selected_drives)
 
     if len(selected_drives) > 1:
         print("\nWARNING: You have selected multiple drives")

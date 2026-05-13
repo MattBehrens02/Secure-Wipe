@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,11 @@ class SmartctlResult:
     returncode: int
     stdout: str
     stderr: str
+
+
+def is_smartctl_available() -> bool:
+    """Return True when smartctl is available in PATH."""
+    return shutil.which("smartctl") is not None
 
 
 def _run_smartctl(device_path: str, timeout: int = 10) -> SmartctlResult:

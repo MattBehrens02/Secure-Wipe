@@ -23,6 +23,7 @@ def _serialize_drive_standard(drive: Any) -> dict[str, Any]:
 	return {
 		"path": getattr(drive, "path", ""),
 		"size": getattr(drive, "size", ""),
+		"media_type": getattr(drive, "media_type", "Unknown"),
 		"model": getattr(drive, "model", ""),
 		"vendor": getattr(drive, "vendor", ""),
 		"serial": getattr(drive, "serial", ""),
@@ -37,6 +38,7 @@ def _serialize_drive_verbose(drive: Any) -> dict[str, Any]:
 		"name": getattr(drive, "name", ""),
 		"path": getattr(drive, "path", ""),
 		"size": getattr(drive, "size", ""),
+		"media_type": getattr(drive, "media_type", "Unknown"),
 		"model": getattr(drive, "model", ""),
 		"vendor": getattr(drive, "vendor", ""),
 		"serial": getattr(drive, "serial", ""),

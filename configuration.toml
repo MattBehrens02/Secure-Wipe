@@ -3,7 +3,7 @@
 # Internal defaults and safety baselines remain in modules/config.py.
 
 [runtime]
-environment = "dev"   # dev | test | prod
+environment = "prod"   # dev | test | prod
 dry_run = true
 
 [safety]
@@ -11,12 +11,12 @@ dry_run = true
 # Use deny (recommended) by default, confirm for guarded exceptions,
 # or allow only in tightly controlled workflows.
 # Confirmation steps are for all operations, including dry runs, to ensure user awareness.
-removable_drive_mode = "deny"   # deny (recommended) | allow
-mount_handling_mode = "deny"   # deny (recommended) | allow
+removable_drive_mode = "allow"   # deny (recommended) | allow
+mount_handling_mode = "allow"   # deny (recommended) | allow
 confirmation_steps = 2          # 2 (recommended) | 1 | 0
 
 [drive_detection]
-collect_smart_info = true  # enabled by default; SMART collection is optional enrichment
+collect_smart_info = false  # enabled by default; SMART collection is optional enrichment
 
 [reporting]
 reports_enabled = false       # true | false

@@ -228,4 +228,14 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
         _apply_logging_overrides(config, logging_data)
 
     _validate_config(config)
+    if config.runtime.environment == "prod":
+        _project_root = Path(__file__).resolve().parent.parent
+        config.paths.project_root = str(_project_root)
+        config.paths.logs_dir    = str(_project_root / "logs")
+        config.paths.reports_dir = str(_project_root / "reports")
+        config.paths.state_dir   = str(_project_root / "state")
+        config.paths.temp_dir    = str(_project_root / "tmp")
+        config.recovery.lock_file_path = str(_project_root / "state" / "wipe.lock")
+
+
     return config

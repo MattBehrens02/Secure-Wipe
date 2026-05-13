@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header
+from modules import smartctl
 
 
 def main() -> int:
@@ -14,10 +15,27 @@ def main() -> int:
 		print(f"Configuration error: {exc}", file=sys.stderr)
 		return 1
 
+	if app_config.drive_detection.collect_smart_info and not smartctl.is_smartctl_available():
+		print(
+			"Warning: SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable.",
+			file=sys.stderr,
+		)
+
 	if not app_config.runtime.environment == "dev": 
 		subprocess.run(["tput", "smcup"], check=False) # Switch to alternate screen buffer
+		subprocess.run("clear")
 
 	header.print_header()
+
+	# Ensure required runtime directories exist.
+	for dir_attr in ("logs_dir", "reports_dir", "state_dir", "temp_dir"):
+		dir_path = Path(getattr(app_config.paths, dir_attr))
+		if not dir_path.exists():
+			try:
+				dir_path.mkdir(parents=True, exist_ok=True)
+				print(f"Created missing directory: {dir_path}")
+			except PermissionError:
+				print(f"Warning: cannot create directory {dir_path} (permission denied) — skipping.", file=sys.stderr)
 
 	try: 
 		print(
