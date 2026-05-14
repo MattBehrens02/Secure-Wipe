@@ -3,7 +3,7 @@ import tomllib
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check
 from modules import smartctl
-from modules.terminal_ui import TerminalUI
+from modules.terminal import TerminalUI
 
 
 def main() -> int:
@@ -40,10 +40,10 @@ def main() -> int:
 		# 	report_path = reporting.generate_detection_json_report(app_config, selected_drives)
 		# 	print(f"Detection report written to: {report_path}")
 
-		# for drive in selected_drives:
-		# 	engine = wipe_engine.WipeEngine(drive, app_config)
-		# 	result = engine.execute()
-		# 	print(f"Drive {drive.identifier} wipe result: {result.status}")
+		for drive in selected_drives:
+			engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
+			result = engine.execute()
+			print(f"Wipe result for {drive.path}: {result.status}")
 
 	finally:
 		terminal_ui.exit_alt_screen()

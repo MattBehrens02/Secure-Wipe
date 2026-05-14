@@ -6,7 +6,7 @@ from modules import config
 from modules.smartctl import collect_smart_snapshot
 from modules.smartctl import collect_smart_info
 from modules import header
-from modules.terminal_ui import CommandRunnerError, CommandRunnerTimeout, TerminalUI, run_command
+from modules.terminal import CommandRunnerError, CommandRunnerTimeout, TerminalUI, run_command
 
 class DriveDetectionError(Exception):
     pass
