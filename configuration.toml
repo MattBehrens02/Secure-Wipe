@@ -3,7 +3,7 @@
 # Internal defaults and safety baselines remain in modules/config.py.
 
 [runtime]
-environment = "prod"   # dev | test | prod
+environment = "dev"   # dev | test | prod
 dry_run = true
 
 [safety]

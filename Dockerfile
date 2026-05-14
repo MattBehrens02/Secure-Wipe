@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y \
     util-linux \
     smartmontools \
     coreutils \
+    scrub \
+    cryptsetup \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

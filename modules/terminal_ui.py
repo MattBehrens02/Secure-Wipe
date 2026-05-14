@@ -65,6 +65,7 @@ class TerminalUI:
     def enter_alt_screen(self) -> None:
         if not self.interactive:
             return
+        subprocess.run(["clear"], check=False)
         subprocess.run(["tput", "smcup"], check=False)
 
     def exit_alt_screen(self) -> None:

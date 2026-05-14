@@ -22,9 +22,6 @@ def main() -> int:
 		)
 
 	terminal_ui.enter_alt_screen()
-	terminal_ui.clear()
-
-	header.print_header()
 	dir_check.ensure_runtime_directories(app_config)
 
 	try: 
@@ -39,15 +36,15 @@ def main() -> int:
 			print("No drives detected.")
 			return 1
 
-		if app_config.reporting.reports_enabled:
-			report_path = reporting.generate_detection_json_report(app_config, selected_drives)
-			print(f"Detection report written to: {report_path}")
+		# if app_config.reporting.reports_enabled:
+		# 	report_path = reporting.generate_detection_json_report(app_config, selected_drives)
+		# 	print(f"Detection report written to: {report_path}")
 
-		if not app_config.runtime.dry_run:
-			print("\n[STUB] Starting drive wiping process...")
+		for drive in selected_drives:
+			engine = wipe_engine.WipeEngine(drive, app_config)
+			result = engine.execute()
+			print(f"Drive {drive.identifier} wipe result: {result.status}")
 
-		# wipe_drives(selected_drive, app_config.wipe)
-	
 	finally:
 		terminal_ui.exit_alt_screen()
 
