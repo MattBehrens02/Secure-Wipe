@@ -1,11 +1,12 @@
 import json
-import subprocess
 from dataclasses import dataclass
 from typing import Any
 
 from modules import config
 from modules.smartctl import collect_smart_snapshot
 from modules.smartctl import collect_smart_info
+from modules import header
+from modules.terminal_ui import CommandRunnerError, CommandRunnerTimeout, TerminalUI, run_command
 
 class DriveDetectionError(Exception):
     pass
@@ -92,7 +93,9 @@ def _infer_media_type(drive: Drive) -> str:
 
 # Main function to run the drive detection and selection workflow. 
 # Returns a list of selected Drive instances or an empty list if no drives were selected or an error occurred.
-def run(app_config: Any = None):
+def run(app_config: Any = None, terminal_ui: TerminalUI | None = None):
+    terminal_ui = terminal_ui or TerminalUI.from_config(app_config)
+
     try:
         fetched_drives = detect_drives()
     except DriveDetectionError as exc:
@@ -104,24 +107,29 @@ def run(app_config: Any = None):
     if app_config is not None:
         formatted_drives = _apply_safety_policy(formatted_drives, app_config)
 
-    selected_drives = get_user_input(formatted_drives)
-    if not selected_drives:
-        print("No drives selected. Exiting.")
-        return []
+    selectionLoop = True
+    while selectionLoop:
 
-    # Show a single warning if any selected drive is removable or mounted
-    if app_config is not None:
-        warn_if_risky_drives(selected_drives)
+        selected_drives = get_user_input(formatted_drives, terminal_ui)
+        if not selected_drives:
+            print("No drives selected. Exiting.")
+            return []
 
-    if app_config is not None and app_config.drive_detection.collect_smart_info:
-        smart_snapshot = collect_smart_snapshot([drive.path for drive in selected_drives])
-        for drive in selected_drives:
-            drive.smart_data = smart_snapshot.get(drive.path)
-            drive.media_type = _infer_media_type(drive)
+        # Show a single warning if any selected drive is removable or mounted
+        if app_config is not None:
+            warn_if_risky_drives(selected_drives)
 
-    if app_config is not None and not confirm_all_drives(selected_drives, app_config):
-        print("Confirmation failed. Exiting.")
-        return []
+        if app_config is not None and app_config.drive_detection.collect_smart_info:
+            smart_snapshot = collect_smart_snapshot([drive.path for drive in selected_drives])
+            for drive in selected_drives:
+                drive.smart_data = smart_snapshot.get(drive.path)
+                drive.media_type = _infer_media_type(drive)
+
+        if app_config is not None and not confirm_all_drives(selected_drives, app_config, terminal_ui):
+            print("Confirmation failed.")
+            selectionLoop = True
+        else:
+            selectionLoop = False
 
     print(f"Selected drive(s) for wiping: {[drive.path for drive in selected_drives]}")
     return selected_drives
@@ -199,6 +207,7 @@ def normalize_drives(fetched_drives: Any) -> list[Drive]:
 
 # Print a menu of available drives for user selection.
 def print_menu_options(drives: list[Drive]) -> None:
+    header.print_header()
     print("\nAvailable Drives:\n")
     menu_index = 0
 
@@ -216,7 +225,7 @@ def print_menu_options(drives: list[Drive]) -> None:
         )
 
 # Prompts the user to select one or more drives from the menu and returns the selected Drive instances.
-def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
+def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI) -> list[Drive]:
     if not formatted_drives:
         print("No eligible disk drives detected.")
         return []
@@ -224,8 +233,9 @@ def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
     valid_input = False
 
     while not valid_input:
+       
         print_menu_options(formatted_drives)
-        print("\nEnter the number(s) corresponding to the drive(s) you want to wipe, separated by commas, or 'q' to quit.")
+        print("\n\nEnter the number(s) corresponding to the drive(s) you want to wipe, separated by commas, or 'q' to quit.")
         choice = input("Your choice: ").strip()
 
         if 'q' in choice.lower():
@@ -242,37 +252,33 @@ def get_user_input(formatted_drives: list[Drive]) -> list[Drive]:
                 if 0 <= selected_index < len(formatted_drives):
                     selected_drives.append(formatted_drives[selected_index])
                 else:
-                    print("Invalid selection. Please enter valid numbers from the menu.")
+                    terminal_ui.clear()
+                    print("\nInvalid selection. Please enter valid numbers from the menu.")
                     valid = False
                     break
             
             if valid and selected_drives:
                 return selected_drives
+            
         except ValueError:
-            print("Invalid input. Please enter comma-separated numbers corresponding to the drives or 'q' to quit.")
+            terminal_ui.clear()
+            print("\nInvalid input. Please enter numbers separated by commas, or 'q' to quit.")
+
 
     return []
 
 # Detects drives using lsblk and returns the parsed JSON output. Raises DriveDetectionError on failure.
 def detect_drives() -> dict[str, Any]:
     try:
-        result = subprocess.run(
+        result = run_command(
             ['lsblk', '--json', '--output', 'NAME,PATH,SIZE,MODEL,VENDOR,SERIAL,TYPE,MOUNTPOINTS,RM,TRAN,ROTA'],
-            capture_output=True,
-            text=True,
-            check=True,
             timeout=10,
+            check=True,
         )
-    except subprocess.TimeoutExpired as exc:
+    except CommandRunnerTimeout as exc:
         raise DriveDetectionError("lsblk timed out while detecting drives") from exc
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()
-        message = f"lsblk failed with exit code {exc.returncode}"
-        if stderr:
-            message = f"{message}: {stderr}"
-        raise DriveDetectionError(message) from exc
-    except OSError as exc:
-        raise DriveDetectionError(f"failed to execute lsblk: {exc}") from exc
+    except CommandRunnerError as exc:
+        raise DriveDetectionError(str(exc)) from exc
 
     try:
         return json.loads(result.stdout)
@@ -301,14 +307,13 @@ def _print_confirm_risk_banner(selected_drives: list[Drive]) -> None:
 
 # Ask the user for confirmation before proceeding with wiping the selected drives.
 # The number of confirmation steps is controlled by app_config.safety.confirmation_steps.
-def confirm_all_drives(selected_drives: list[Drive], app_config: Any) -> bool:
+def confirm_all_drives(selected_drives: list[Drive], app_config: Any, terminal_ui: TerminalUI) -> bool:
     steps = int(app_config.safety.confirmation_steps)
 
     if steps <= 0:
         return True
     
-    if app_config.runtime.environment != "dev":
-        subprocess.run("clear")  # Clear the screen to make the warning more prominent
+    terminal_ui.clear()
 
     _print_confirm_risk_banner(selected_drives)
 

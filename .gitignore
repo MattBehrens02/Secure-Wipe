@@ -1,3 +1,9 @@
+# Program Directories
+logs/
+reports/
+tmp/
+state/
+
 # Python
 __pycache__/
 *.py[cod]
