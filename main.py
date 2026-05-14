@@ -40,10 +40,10 @@ def main() -> int:
 		# 	report_path = reporting.generate_detection_json_report(app_config, selected_drives)
 		# 	print(f"Detection report written to: {report_path}")
 
-		for drive in selected_drives:
-			engine = wipe_engine.WipeEngine(drive, app_config)
-			result = engine.execute()
-			print(f"Drive {drive.identifier} wipe result: {result.status}")
+		# for drive in selected_drives:
+		# 	engine = wipe_engine.WipeEngine(drive, app_config)
+		# 	result = engine.execute()
+		# 	print(f"Drive {drive.identifier} wipe result: {result.status}")
 
 	finally:
 		terminal_ui.exit_alt_screen()
