@@ -22,6 +22,7 @@ collect_smart_info = false  # enabled by default; SMART collection is optional e
 reports_enabled = false       # true | false
 formats = ["json", "txt"]  # json | txt
 detail_level = "verbose"     # minimal | standard | verbose
+operator_identifier = "unknown"  # optional identifier for operator performing wipe
 
 [logging]
 enabled = true       # true | false
