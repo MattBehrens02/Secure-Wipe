@@ -28,6 +28,7 @@ class WipeEngine:
         self.drive = drive
         self.path = drive.path  # /dev/sdx
         self.dry_run = dry_run
+        self.smart_before = getattr(drive, "smart_data", None)
         # Temporary key file used only for this wipe session.
         self.keyfile = "/tmp/securewipe.key"
         # Device-mapper name used when opening the LUKS container.
@@ -129,7 +130,7 @@ class WipeEngine:
                 cleanup_errors.append(f"delete_temporary_key: {exc}")
 
             finished_at = datetime.now(timezone.utc).isoformat()
-            total_duration_seconds = round(time.perf_counter() - total_start_perf, 3)
+            total_duration_seconds = max(0.001, round(time.perf_counter() - total_start_perf, 3))
 
             if cleanup_errors:
                 cleanup_text = "; ".join(cleanup_errors)
@@ -156,6 +157,7 @@ class WipeEngine:
             error_message=error_message,
             duration_seconds=total_duration_seconds,
             step_durations_seconds=step_durations_seconds,
+            smart_before=self.smart_before,
         )
 
     def _run_step_command(self, cmd, info_message: str):
@@ -225,7 +227,18 @@ class WipeEngine:
 
     def verify(self):
         """Placeholder for post-wipe verification logic."""
-        pass
+        raise NotImplementedError("Use verify(app_config) for post-wipe verification.")
+
+    def verify_with_config(self, app_config):
+        """Run post-wipe verification using the configured verification policy."""
+        from modules import verification
+
+        return verification.verify_wipe(
+            self.drive,
+            app_config,
+            dry_run=self.dry_run,
+            smart_before=self.smart_before,
+        )
 
 
 class WipeResult:
@@ -241,6 +254,8 @@ class WipeResult:
         error_message: str | None = None,
         duration_seconds: float | None = None,
         step_durations_seconds: dict[str, float] | None = None,
+        smart_before: dict | None = None,
+        verification_result: object | None = None,
     ):
         self.status = status
         self.drive_path = drive_path
@@ -250,6 +265,8 @@ class WipeResult:
         self.error_message = error_message
         self.duration_seconds = duration_seconds
         self.step_durations_seconds = step_durations_seconds or {}
+        self.smart_before = smart_before
+        self.verification_result = verification_result
 
     def format_duration_summary(self) -> str:
         """Format duration metrics as human-readable output."""

@@ -51,6 +51,7 @@ def main() -> int:
 		for drive in selected_drives:
 			engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
 			result = engine.execute()
+			verification_result = None
 			print(f"Wipe result for {drive.path}: {result.status}")
 			if result.status == "failed":
 				failed_step = getattr(result, "failed_step", None)
@@ -65,6 +66,17 @@ def main() -> int:
 					f"Wipe completed drive={drive.path} status={result.status} "
 					f"started_at={started_at} finished_at={finished_at}"
 				)
+				verification_result = engine.verify_with_config(app_config)
+				result.verification_result = verification_result
+				print(f"Verification result for {drive.path}: {verification_result.status}")
+				if verification_result.status == "failed":
+					app_logging.log_error(
+						f"Verification failed drive={drive.path} failed_checks={verification_result.checks_failed}"
+					)
+				else:
+					app_logging.log_info(
+						f"Verification completed drive={drive.path} status={verification_result.status}"
+					)
 			
 			# Print duration summary if available
 			duration_summary = getattr(result, "format_duration_summary", lambda: "")()
@@ -73,7 +85,12 @@ def main() -> int:
 			
 			# Generate and save wipe report
 			try:
-				report = reporting.generate_wipe_report(drive, result, app_config)
+				report = reporting.generate_wipe_report(
+					drive,
+					result,
+					app_config,
+					verification_result=verification_result,
+				)
 				reports_dir = getattr(app_config.paths, "reports_dir", "./reports")
 				detail_level = getattr(app_config.reporting, "detail_level", "verbose")
 				json_path, text_path = reporting.save_wipe_report(

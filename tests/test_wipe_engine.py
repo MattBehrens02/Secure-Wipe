@@ -249,6 +249,30 @@ class TestWipeEngine(unittest.TestCase):
         self.assertIsInstance(result.step_durations_seconds, dict)
         self.assertGreater(len(result.step_durations_seconds), 0)
 
+    def test_execute_carries_pre_wipe_smart_snapshot(self):
+        drive = SimpleNamespace(path="/dev/sdz", smart_data={"device": {"name": "sdz"}})
+        engine = WipeEngine(drive, dry_run=True)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive"), \
+             patch.object(engine, "_close_encrypted_container"), \
+             patch.object(engine, "_destroy_luks2_container"), \
+             patch.object(engine, "_remove_residual_signatures"):
+            result = engine.execute()
+
+        self.assertEqual(result.smart_before, {"device": {"name": "sdz"}})
+
+    def test_verify_with_config_delegates_to_verification_module(self):
+        engine = WipeEngine(self.drive, dry_run=False)
+
+        with patch("modules.verification.verify_wipe", return_value=SimpleNamespace(status="passed")) as mock_verify:
+            result = engine.verify_with_config(SimpleNamespace(verification=SimpleNamespace(enabled=True)))
+
+        self.assertEqual(result.status, "passed")
+        mock_verify.assert_called_once()
+
     def test_wipe_result_format_duration_summary_with_human_readable_names(self):
         from modules.wipe_engine import WipeResult
         
