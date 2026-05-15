@@ -105,7 +105,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
         "resume_state_max_age_seconds",
         "allow_failed_resume",
     },
-    "reporting": {"reports_enabled", "formats", "detail_level", "operator_identifier"},
+    "reporting": {"formats", "detail_level"},
     "logging": {"enabled", "level"},
 }
 
@@ -166,14 +166,10 @@ def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
 
 
 def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]) -> None:
-    if "reports_enabled" in reporting_data:
-        config.reporting.reports_enabled = bool(reporting_data["reports_enabled"])
     if "formats" in reporting_data:
         config.reporting.formats = list(reporting_data["formats"])
     if "detail_level" in reporting_data:
         config.reporting.detail_level = str(reporting_data["detail_level"]).lower()
-    if "operator_identifier" in reporting_data:
-        config.reporting.operator_identifier = str(reporting_data["operator_identifier"])
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
