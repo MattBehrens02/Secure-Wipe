@@ -3,7 +3,8 @@ import tomllib
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check
 from modules import smartctl
-from modules.terminal_ui import TerminalUI
+from modules import app_logging
+from modules.terminal import TerminalUI
 
 
 def main() -> int:
@@ -20,12 +21,11 @@ def main() -> int:
 			"Warning: SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable.",
 			file=sys.stderr,
 		)
+		app_logging.log_error("SMART collection enabled but smartctl is unavailable")
 
 	terminal_ui.enter_alt_screen()
-	terminal_ui.clear()
-
-	header.print_header()
 	dir_check.ensure_runtime_directories(app_config)
+	app_logging.setup_logging(app_config)
 
 	try: 
 		print(
@@ -33,21 +33,44 @@ def main() -> int:
 			f"environment={app_config.runtime.environment}, "
 			f"dry_run={app_config.runtime.dry_run}"
 		)
+		app_logging.log_info(
+			"Application start "
+			f"environment={app_config.runtime.environment} dry_run={app_config.runtime.dry_run}"
+		)
 
 		selected_drives = drive_detection.run(app_config, terminal_ui)
 		if selected_drives == []:
 			print("No drives detected.")
+			app_logging.log_error("No drives detected after selection flow")
 			return 1
 
-		if app_config.reporting.reports_enabled:
-			report_path = reporting.generate_detection_json_report(app_config, selected_drives)
-			print(f"Detection report written to: {report_path}")
+		# if app_config.reporting.reports_enabled:
+		# 	report_path = reporting.generate_detection_json_report(app_config, selected_drives)
+		# 	print(f"Detection report written to: {report_path}")
 
-		if not app_config.runtime.dry_run:
-			print("\n[STUB] Starting drive wiping process...")
+		for drive in selected_drives:
+			engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
+			result = engine.execute()
+			print(f"Wipe result for {drive.path}: {result.status}")
+			if result.status == "failed":
+				failed_step = getattr(result, "failed_step", None)
+				error_message = getattr(result, "error_message", None)
+				app_logging.log_error(
+					f"Wipe failed drive={drive.path} step={failed_step} error={error_message}"
+				)
+			else:
+				started_at = getattr(result, "started_at", None)
+				finished_at = getattr(result, "finished_at", None)
+				app_logging.log_info(
+					f"Wipe completed drive={drive.path} status={result.status} "
+					f"started_at={started_at} finished_at={finished_at}"
+				)
+			
+			# Print duration summary if available
+			duration_summary = getattr(result, "format_duration_summary", lambda: "")()
+			if duration_summary:
+				print(duration_summary)
 
-		# wipe_drives(selected_drive, app_config.wipe)
-	
 	finally:
 		terminal_ui.exit_alt_screen()
 

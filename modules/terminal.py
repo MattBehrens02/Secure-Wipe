@@ -1,8 +1,16 @@
+"""
+terminal.py - Destructive wipe command builders for Secure-Wipe
+
+All methods are static and return a list of arguments for safe use with subprocess or run_command.
+"""
+
+
 import subprocess
 from dataclasses import dataclass
 from typing import Any
 
 
+# --- Command execution logic (from terminal_ui.py) ---
 class CommandRunnerError(Exception):
     """Raised when an external command cannot be executed successfully."""
 
@@ -65,9 +73,61 @@ class TerminalUI:
     def enter_alt_screen(self) -> None:
         if not self.interactive:
             return
+        subprocess.run(["clear"], check=False)
         subprocess.run(["tput", "smcup"], check=False)
 
     def exit_alt_screen(self) -> None:
         if not self.interactive:
             return
         subprocess.run(["tput", "rmcup"], check=False)
+
+
+class WipeCommands:
+    @staticmethod
+    def luks_format(device, keyfile):
+        """Build command to format device as LUKS2 container."""
+        return [
+            "cryptsetup", "luksFormat",
+            "--type", "luks2",
+            "--batch-mode",
+            "--key-file", keyfile,
+            device
+        ]
+
+    @staticmethod
+    def luks_open(device, keyfile, mapping_name):
+        """Build command to open LUKS2 container and create mapping."""
+        return [
+            "cryptsetup", "open",
+            "--key-file", keyfile,
+            device,
+            mapping_name
+        ]
+
+    @staticmethod
+    def luks_close(mapping_name):
+        """Build command to close LUKS2 mapping."""
+        return [
+            "cryptsetup", "close", mapping_name
+        ]
+
+    @staticmethod
+    def scrub(mapped_device, pattern="nnsa"):
+        """Build command to scrub (overwrite) mapped device."""
+        return [
+            "scrub", "-f", "-p", pattern, mapped_device
+        ]
+
+    @staticmethod
+    def destroy_luks_header(device):
+        """Build command to erase LUKS header from device."""
+        return [
+            "cryptsetup", "erase", device
+        ]
+
+    @staticmethod
+    def wipefs(device):
+        """Build command to remove all filesystem signatures from device."""
+        return [
+            "wipefs", "--all", "--force", device
+        ]

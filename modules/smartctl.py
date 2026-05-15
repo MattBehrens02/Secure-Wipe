@@ -3,7 +3,7 @@ import shutil
 from dataclasses import dataclass
 from typing import Any
 
-from modules.terminal_ui import CommandRunnerError, CommandRunnerTimeout, run_command
+from modules.terminal import CommandRunnerError, CommandRunnerTimeout, run_command
 
 
 class SmartctlError(Exception):

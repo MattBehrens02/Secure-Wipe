@@ -71,12 +71,8 @@ class UploadConfig:
 
 @dataclass
 class LoggingConfig:
-    level: str = "INFO"
-    file_level: str = "DEBUG"
-    console_level: str = "INFO"
-    json_logs: bool = False
-    rotate_max_bytes: int = 10_000_000
-    rotate_backups: int = 5
+    enabled: bool = True
+    level: str = "info"  # info | errors
 
 @dataclass
 class AppConfig:
@@ -99,7 +95,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
     "reporting": {"reports_enabled", "formats", "detail_level"},
-    "logging": {"level", "console_level"},
+    "logging": {"enabled", "level"},
 }
 
 
@@ -153,10 +149,10 @@ def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
+    if "enabled" in logging_data:
+        config.logging.enabled = bool(logging_data["enabled"])
     if "level" in logging_data:
-        config.logging.level = str(logging_data["level"])
-    if "console_level" in logging_data:
-        config.logging.console_level = str(logging_data["console_level"])
+        config.logging.level = str(logging_data["level"]).lower()
 
 
 def _validate_config(config: AppConfig) -> None:
@@ -175,11 +171,12 @@ def _validate_config(config: AppConfig) -> None:
     if not isinstance(config.drive_detection.collect_smart_info, bool):
         raise ValueError("drive_detection.collect_smart_info must be a boolean")
 
-    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-    if config.logging.level.upper() not in valid_levels:
-        raise ValueError("logging.level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
-    if config.logging.console_level.upper() not in valid_levels:
-        raise ValueError("logging.console_level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    if not isinstance(config.logging.enabled, bool):
+        raise ValueError("logging.enabled must be a boolean")
+
+    valid_levels = {"info", "errors"}
+    if config.logging.level not in valid_levels:
+        raise ValueError("logging.level must be one of: info, errors")
 
     valid_formats = {"json", "txt"}
     if not config.reporting.formats:
