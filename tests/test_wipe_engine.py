@@ -9,51 +9,51 @@ class TestWipeEngine(unittest.TestCase):
     def setUp(self):
         self.drive = SimpleNamespace(path="/dev/sdz")
 
-    def test_execute_dry_run_returns_and_skips_steps(self):
+    def test_execute_dry_run_returns_and_runs_internal_steps(self):
         engine = WipeEngine(self.drive, dry_run=True)
 
-        with patch.object(engine, "generate_temporary_key") as gen_key, \
-             patch.object(engine, "create_luks2_container") as luks_format, \
-             patch.object(engine, "open_encrypted_container") as luks_open, \
-             patch.object(engine, "write_across_encrypted_drive") as scrub, \
-             patch.object(engine, "close_encrypted_container") as luks_close, \
-             patch.object(engine, "destroy_luks2_container") as destroy_header, \
-             patch.object(engine, "remove_residual_signatures") as wipefs:
+        with patch.object(engine, "_generate_temporary_key") as gen_key, \
+             patch.object(engine, "_create_luks2_container") as luks_format, \
+             patch.object(engine, "_open_encrypted_container") as luks_open, \
+             patch.object(engine, "_write_across_encrypted_drive") as scrub, \
+             patch.object(engine, "_close_encrypted_container") as luks_close, \
+             patch.object(engine, "_destroy_luks2_container") as destroy_header, \
+             patch.object(engine, "_remove_residual_signatures") as wipefs:
             result = engine.execute()
 
         self.assertEqual(result.status, "dry_run")
-        gen_key.assert_not_called()
-        luks_format.assert_not_called()
-        luks_open.assert_not_called()
-        scrub.assert_not_called()
-        luks_close.assert_not_called()
-        destroy_header.assert_not_called()
-        wipefs.assert_not_called()
+        gen_key.assert_called_once()
+        luks_format.assert_called_once()
+        luks_open.assert_called_once()
+        scrub.assert_called_once()
+        luks_close.assert_called_once()
+        destroy_header.assert_called_once()
+        wipefs.assert_called_once()
 
     def test_execute_runs_steps_in_order_when_not_dry_run(self):
         engine = WipeEngine(self.drive, dry_run=False)
         calls = []
 
-        with patch.object(engine, "generate_temporary_key", side_effect=lambda: calls.append("generate_temporary_key")), \
-             patch.object(engine, "create_luks2_container", side_effect=lambda: calls.append("create_luks2_container")), \
-             patch.object(engine, "open_encrypted_container", side_effect=lambda: calls.append("open_encrypted_container")), \
-             patch.object(engine, "write_across_encrypted_drive", side_effect=lambda: calls.append("write_across_encrypted_drive")), \
-             patch.object(engine, "close_encrypted_container", side_effect=lambda: calls.append("close_encrypted_container")), \
-             patch.object(engine, "destroy_luks2_container", side_effect=lambda: calls.append("destroy_luks2_container")), \
-             patch.object(engine, "remove_residual_signatures", side_effect=lambda: calls.append("remove_residual_signatures")):
+        with patch.object(engine, "_generate_temporary_key", side_effect=lambda: calls.append("_generate_temporary_key")), \
+             patch.object(engine, "_create_luks2_container", side_effect=lambda: calls.append("_create_luks2_container")), \
+             patch.object(engine, "_open_encrypted_container", side_effect=lambda: calls.append("_open_encrypted_container")), \
+             patch.object(engine, "_write_across_encrypted_drive", side_effect=lambda: calls.append("_write_across_encrypted_drive")), \
+             patch.object(engine, "_close_encrypted_container", side_effect=lambda: calls.append("_close_encrypted_container")), \
+             patch.object(engine, "_destroy_luks2_container", side_effect=lambda: calls.append("_destroy_luks2_container")), \
+             patch.object(engine, "_remove_residual_signatures", side_effect=lambda: calls.append("_remove_residual_signatures")):
             result = engine.execute()
 
         self.assertEqual(result.status, "success")
         self.assertEqual(
             calls,
             [
-                "generate_temporary_key",
-                "create_luks2_container",
-                "open_encrypted_container",
-                "write_across_encrypted_drive",
-                "close_encrypted_container",
-                "destroy_luks2_container",
-                "remove_residual_signatures",
+                "_generate_temporary_key",
+                "_create_luks2_container",
+                "_open_encrypted_container",
+                "_write_across_encrypted_drive",
+                "_close_encrypted_container",
+                "_destroy_luks2_container",
+                "_remove_residual_signatures",
             ],
         )
 
@@ -61,7 +61,7 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.generate_temporary_key()
+            engine._generate_temporary_key()
 
         mock_run.assert_called_once_with(
             ["dd", "if=/dev/urandom", "of=/tmp/securewipe.key", "bs=1M", "count=4"],
@@ -72,7 +72,7 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.create_luks2_container()
+            engine._create_luks2_container()
 
         mock_run.assert_called_once_with(
             [
@@ -92,7 +92,7 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.open_encrypted_container()
+            engine._open_encrypted_container()
 
         mock_run.assert_called_once_with(
             [
@@ -110,10 +110,10 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.write_across_encrypted_drive()
+            engine._write_across_encrypted_drive()
 
         mock_run.assert_called_once_with(
-            ["scrub", "-f", "/dev/mapper/wipe_sdz"],
+            ["scrub", "-f", "-p", "nnsa", "/dev/mapper/wipe_sdz"],
             check=True,
         )
 
@@ -121,7 +121,7 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.close_encrypted_container()
+            engine._close_encrypted_container()
 
         mock_run.assert_called_once_with(
             ["cryptsetup", "close", "wipe_sdz"],
@@ -132,7 +132,7 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.destroy_luks2_container()
+            engine._destroy_luks2_container()
 
         mock_run.assert_called_once_with(
             ["cryptsetup", "erase", "/dev/sdz"],
@@ -143,12 +143,130 @@ class TestWipeEngine(unittest.TestCase):
         engine = WipeEngine(self.drive, dry_run=False)
 
         with patch("modules.wipe_engine.run_command") as mock_run:
-            engine.remove_residual_signatures()
+            engine._remove_residual_signatures()
 
         mock_run.assert_called_once_with(
             ["wipefs", "--all", "--force", "/dev/sdz"],
             check=True,
         )
+
+    def test_internal_run_step_command_skips_execution_in_dry_run(self):
+        engine = WipeEngine(self.drive, dry_run=True)
+
+        with patch("modules.wipe_engine.run_command") as mock_run:
+            engine._run_step_command(["echo", "noop"], "[INFO] test")
+
+        mock_run.assert_not_called()
+
+    def test_execute_runs_final_hdd_overwrite_when_drive_is_hdd(self):
+        hdd_drive = SimpleNamespace(path="/dev/sdz", is_hdd=True)
+        engine = WipeEngine(hdd_drive, dry_run=False)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive"), \
+             patch.object(engine, "_close_encrypted_container"), \
+             patch.object(engine, "_destroy_luks2_container"), \
+             patch.object(engine, "_remove_residual_signatures"), \
+             patch.object(engine, "_final_hdd_overwrite") as final_hdd:
+            engine.execute()
+
+        final_hdd.assert_called_once()
+
+    def test_execute_skips_final_hdd_overwrite_when_drive_is_not_hdd(self):
+        ssd_drive = SimpleNamespace(path="/dev/sdz", is_hdd=False)
+        engine = WipeEngine(ssd_drive, dry_run=False)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive"), \
+             patch.object(engine, "_close_encrypted_container"), \
+             patch.object(engine, "_destroy_luks2_container"), \
+             patch.object(engine, "_remove_residual_signatures"), \
+             patch.object(engine, "_final_hdd_overwrite") as final_hdd:
+            engine.execute()
+
+        final_hdd.assert_not_called()
+
+    def test_final_hdd_overwrite_invokes_expected_command(self):
+        hdd_drive = SimpleNamespace(path="/dev/sdz", is_hdd=True)
+        engine = WipeEngine(hdd_drive, dry_run=False)
+
+        with patch("modules.wipe_engine.run_command") as mock_run:
+            engine._final_hdd_overwrite()
+
+        mock_run.assert_called_once_with(
+            ["scrub", "-f", "-p", "fillzero", "/dev/sdz"],
+            check=True,
+        )
+
+    def test_execute_returns_structured_failure_result_when_step_raises(self):
+        engine = WipeEngine(self.drive, dry_run=False)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container", side_effect=RuntimeError("boom")), \
+             patch.object(engine, "_delete_temporary_key") as cleanup_key:
+            result = engine.execute()
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failed_step, "create_luks2_container")
+        self.assertIn("boom", result.error_message)
+        self.assertEqual(result.drive_path, "/dev/sdz")
+        self.assertIsNotNone(result.started_at)
+        self.assertIsNotNone(result.finished_at)
+        cleanup_key.assert_called_once()
+
+    def test_execute_attempts_mapper_close_in_finally_when_failure_occurs_after_open(self):
+        engine = WipeEngine(self.drive, dry_run=False)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive", side_effect=RuntimeError("write failed")), \
+             patch.object(engine, "_close_encrypted_container") as close_mapper, \
+             patch.object(engine, "_delete_temporary_key"):
+            result = engine.execute()
+
+        self.assertEqual(result.status, "failed")
+        close_mapper.assert_called_once()
+
+    def test_execute_includes_duration_metrics_in_result(self):
+        engine = WipeEngine(self.drive, dry_run=False)
+
+        with patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive"), \
+             patch.object(engine, "_close_encrypted_container"), \
+             patch.object(engine, "_destroy_luks2_container"), \
+             patch.object(engine, "_remove_residual_signatures"):
+            result = engine.execute()
+
+        self.assertIsNotNone(result.duration_seconds)
+        self.assertGreater(result.duration_seconds, 0)
+        self.assertIsInstance(result.step_durations_seconds, dict)
+        self.assertGreater(len(result.step_durations_seconds), 0)
+
+    def test_wipe_result_format_duration_summary_with_human_readable_names(self):
+        from modules.wipe_engine import WipeResult
+        
+        result = WipeResult(
+            status="success",
+            duration_seconds=10.5,
+            step_durations_seconds={
+                "generate_temporary_key": 0.1,
+                "create_luks2_container": 1.2,
+                "write_across_encrypted_drive": 8.5,
+            },
+        )
+
+        summary = result.format_duration_summary()
+        self.assertIn("Duration summary: 10.5s total", summary)
+        self.assertIn("Generate Temporary Key: 0.1s", summary)
+        self.assertIn("Create Luks2 Container: 1.2s", summary)
+        self.assertIn("Write Across Encrypted Drive: 8.5s", summary)
 
 
 if __name__ == "__main__":

@@ -58,7 +58,10 @@ class TestTerminal(unittest.TestCase):
     def test_wipe_commands_build_expected_commands(self):
         self.assertIn("luksFormat", WipeCommands.luks_format("/dev/sda", "/tmp/key"))
         self.assertEqual(WipeCommands.luks_close("wipe_sda"), ["cryptsetup", "close", "wipe_sda"])
-        self.assertEqual(WipeCommands.scrub("/dev/mapper/wipe_sda"), ["scrub", "-f", "/dev/mapper/wipe_sda"])
+        self.assertEqual(
+            WipeCommands.scrub("/dev/mapper/wipe_sda"),
+            ["scrub", "-f", "-p", "nnsa", "/dev/mapper/wipe_sda"],
+        )
 
 
 if __name__ == "__main__":

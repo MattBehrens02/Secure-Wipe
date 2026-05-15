@@ -112,10 +112,10 @@ class WipeCommands:
         ]
 
     @staticmethod
-    def scrub(mapped_device):
+    def scrub(mapped_device, pattern="nnsa"):
         """Build command to scrub (overwrite) mapped device."""
         return [
-            "scrub", "-f", mapped_device
+            "scrub", "-f", "-p", pattern, mapped_device
         ]
 
     @staticmethod

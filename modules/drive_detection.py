@@ -25,6 +25,7 @@ class Drive:
     transport: str
     rotational: bool | None
     media_type: str = "Unknown"
+    is_hdd: bool = False
     smart_data: dict[str, Any] | None = None
 
 
@@ -76,6 +77,7 @@ def _infer_media_type(drive: Drive) -> str:
         return "USB"
 
     if drive.rotational is True:
+        drive.is_hdd = True
         return "HDD"
     if drive.rotational is False:
         return "SSD"
@@ -87,6 +89,7 @@ def _infer_media_type(drive: Drive) -> str:
 
         rotation_rate = smart_data.get("rotation_rate")
         if isinstance(rotation_rate, (int, float)) and rotation_rate > 0:
+            drive.is_hdd = True
             return "HDD"
 
     return "Unknown"

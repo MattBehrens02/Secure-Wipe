@@ -33,8 +33,8 @@ class TestConfig(unittest.TestCase):
             detail_level = "standard"
 
             [logging]
-            level = "warning"
-            console_level = "error"
+            enabled = true
+            level = "errors"
             """
         )
 
@@ -51,8 +51,8 @@ class TestConfig(unittest.TestCase):
         self.assertFalse(cfg.drive_detection.collect_smart_info)
         self.assertEqual(cfg.reporting.formats, ["json"])
         self.assertEqual(cfg.reporting.detail_level, "standard")
-        self.assertEqual(cfg.logging.level, "warning")
-        self.assertEqual(cfg.logging.console_level, "error")
+        self.assertTrue(cfg.logging.enabled)
+        self.assertEqual(cfg.logging.level, "errors")
 
     def test_rejects_unknown_toml_table(self):
         toml_text = "[unknown]\nvalue = 1\n"
