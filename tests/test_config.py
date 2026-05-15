@@ -35,7 +35,6 @@ class TestConfig(unittest.TestCase):
             allow_failed_resume = true
 
             [reporting]
-            reports_enabled = true
             formats = ["json"]
             detail_level = "standard"
 

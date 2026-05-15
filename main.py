@@ -175,6 +175,20 @@ def main() -> int:
 				print(f"  JSON: {json_path}")
 				print(f"  Text: {text_path}")
 				app_logging.log_info(f"Wipe report saved drive={drive.path} json={json_path} text={text_path}")
+				
+				# Attempt to upload reports
+				upload_result = uploader.upload_reports(
+					json_path,
+					text_path,
+					app_config,
+					dry_run=app_config.runtime.dry_run,
+				)
+				if upload_result:
+					print("Report upload: SUCCESS")
+					app_logging.log_info(f"Report upload succeeded drive={drive.path}")
+				else:
+					print("Report upload: FAILED (reports retained locally for retry)")
+					app_logging.log_error(f"Report upload failed drive={drive.path}; reports retained locally")
 			except Exception as report_error:
 				app_logging.log_error(f"Failed to save wipe report: {report_error}")
 
