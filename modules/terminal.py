@@ -81,6 +81,37 @@ class TerminalUI:
             return
         subprocess.run(["tput", "rmcup"], check=False)
 
+    def prompt_choice(self, message: str, choices: list[str], default: int = 0) -> str:
+        """Prompt user to choose from a list of options.
+        
+        Args:
+            message: Question to display to the user
+            choices: List of option strings
+            default: Index of default choice (0-based)
+        
+        Returns:
+            Selected choice string, or default if not interactive
+        """
+        if not self.interactive:
+            return choices[default] if choices else ""
+        
+        print(f"\n{message}")
+        for i, choice in enumerate(choices):
+            marker = " (default)" if i == default else ""
+            print(f"  [{i + 1}] {choice}{marker}")
+        
+        while True:
+            try:
+                user_input = input("Enter choice (1-{}): ".format(len(choices))).strip()
+                if not user_input:
+                    return choices[default]
+                choice_index = int(user_input) - 1
+                if 0 <= choice_index < len(choices):
+                    return choices[choice_index]
+                print(f"Invalid choice. Please enter 1-{len(choices)}.")
+            except ValueError:
+                print(f"Invalid input. Please enter a number 1-{len(choices)}.")
+
 
 class WipeCommands:
     @staticmethod
