@@ -53,13 +53,41 @@ def main() -> int:
 			)
 		]
 
+		selected_drives = []
 		if resume_candidates:
-			print(
-				f"Found {len(resume_candidates)} resumable recovery state(s). "
-				"Resume/restart flow will be enabled in next recovery integration step."
+			# Sort by updated_at descending (most recent first)
+			resume_candidates_sorted = sorted(
+				resume_candidates,
+				key=lambda s: s.updated_at,
+				reverse=True
 			)
-			app_logging.log_info(f"Recovery detected resumable_states={len(resume_candidates)}")
-
+			
+			# Format candidate summary for user
+			candidate_summary = "\n".join([
+				f"  Drive: {s.drive_path}, Status: {s.status}, "
+				f"Current step: {s.current_step}, Updated: {s.updated_at}"
+				for s in resume_candidates_sorted
+			])
+			
+			print(f"\nFound {len(resume_candidates)} resumable recovery state(s):")
+			print(candidate_summary)
+			
+			choice = terminal_ui.prompt_choice(
+				"What would you like to do?",
+				["Resume oldest incomplete wipe", "Start fresh wipe (clear incomplete states)"],
+				default=0
+			)
+			
+			if choice == "Resume oldest incomplete wipe":
+				# Use the most recent candidate for resume
+				selected_drives = [resume_candidates_sorted[0].drive_path]
+				app_logging.log_info(f"User chose to resume wipe on {selected_drives[0]}")
+			else:
+				# Clear all resumable states and proceed with fresh start
+				for state in resume_candidates:
+					recovery.clear_state(state_dir, state.drive_path)
+				app_logging.log_info(f"User chose to start fresh; cleared {len(resume_candidates)} incomplete states")
+		
 		print(
 			"Loaded configuration: "
 			f"environment={app_config.runtime.environment}, "
@@ -70,7 +98,10 @@ def main() -> int:
 			f"environment={app_config.runtime.environment} dry_run={app_config.runtime.dry_run}"
 		)
 
-		selected_drives = drive_detection.run(app_config, terminal_ui)
+		# If no drives selected via resume, run drive detection
+		if not selected_drives:
+			selected_drives = drive_detection.run(app_config, terminal_ui)
+		
 		if selected_drives == []:
 			print("No drives detected.")
 			app_logging.log_error("No drives detected after selection flow")
