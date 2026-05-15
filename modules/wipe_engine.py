@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 import os
 import time
+import uuid
 
 from modules.app_logging import log_error, log_info
+from modules import recovery
 from modules.terminal import WipeCommands, run_command
 
 
@@ -36,6 +38,71 @@ class WipeEngine:
 
     def execute(self):
         """Run the full wipe sequence and return a high-level status result."""
+        return self._execute_internal(recovery_state=None, state_dir=None)
+
+    def execute_with_recovery(self, app_config):
+        """Run wipe with checkpoint persistence and resume support."""
+        recovery_cfg = getattr(app_config, "recovery", object())
+        state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
+        resume_max_age_seconds = int(getattr(recovery_cfg, "resume_state_max_age_seconds", 86400))
+        allow_failed_resume = bool(getattr(recovery_cfg, "allow_failed_resume", False))
+        max_resume_attempts = int(getattr(recovery_cfg, "max_resume_attempts", 3))
+
+        state = recovery.load_state(state_dir, self.path)
+        resumed_from_checkpoint = False
+        resume_source_status = None
+
+        if state and recovery.should_offer_resume(
+            state,
+            max_age_seconds=resume_max_age_seconds,
+            allow_failed_resume=allow_failed_resume,
+        ):
+            if not hasattr(state, "metadata") or not isinstance(state.metadata, dict):
+                state.metadata = {}
+            if not getattr(state, "session_id", ""):
+                state.session_id = str(uuid.uuid4())
+            resumed_from_checkpoint = True
+            resume_source_status = state.status
+            state.max_resume_attempts = max_resume_attempts
+            state.increment_resume_attempts()
+            state.metadata["resumed"] = True
+            state.metadata["resume_source_status"] = resume_source_status
+            log_info(
+                f"Recovery resume accepted drive={self.path} resume_attempts={state.resume_attempts}"
+            )
+        else:
+            state = recovery.RecoveryState(
+                session_id=str(uuid.uuid4()),
+                drive_path=self.path,
+                mapping_name=self.mapping_name,
+                keyfile_path=self.keyfile,
+                max_resume_attempts=max_resume_attempts,
+            )
+            state.metadata["resumed"] = False
+            log_info(f"Recovery new session drive={self.path} session_id={state.session_id}")
+
+        recovery.save_state(state_dir, state)
+        result = self._execute_internal(recovery_state=state, state_dir=state_dir)
+
+        if result.status in {"success", "dry_run"}:
+            state.mark_completed()
+            recovery.save_state(state_dir, state)
+            recovery.clear_state(state_dir, self.path)
+        else:
+            if state.status == "in_progress":
+                state.mark_interrupted(result.error_message)
+                recovery.save_state(state_dir, state)
+
+        result.recovery_resumed = resumed_from_checkpoint
+        result.recovery_session_id = getattr(state, "session_id", None)
+        result.recovery_resume_attempts = int(getattr(state, "resume_attempts", 0) or 0)
+        result.recovery_state_status = getattr(state, "status", None)
+        result.recovery_resume_source_status = resume_source_status
+
+        return result
+
+    def _execute_internal(self, recovery_state=None, state_dir=None):
+        """Run the wipe sequence with optional recovery checkpoint integration."""
         started_at = datetime.now(timezone.utc).isoformat()
         total_start_perf = time.perf_counter()
         failed_step = None
@@ -43,60 +110,75 @@ class WipeEngine:
         mapping_open = False
         step_durations_seconds: dict[str, float] = {}
 
+        use_recovery = recovery_state is not None and state_dir is not None
+        preserve_key_on_failure = bool(use_recovery)
+
+        steps = [
+            ("generate_temporary_key", self._generate_temporary_key),
+            ("create_luks2_container", self._create_luks2_container),
+            ("open_encrypted_container", self._open_encrypted_container),
+            ("write_across_encrypted_drive", self._write_across_encrypted_drive),
+            ("close_encrypted_container", self._close_encrypted_container),
+            ("destroy_luks2_container", self._destroy_luks2_container),
+            ("remove_residual_signatures", self._remove_residual_signatures),
+        ]
+        if getattr(self.drive, "is_hdd", False):
+            steps.append(("final_hdd_overwrite", self._final_hdd_overwrite))
+        else:
+            print("[INFO] Skipping final HDD overwrite since drive is not detected as HDD.")
+            log_info(f"Skipping final_hdd_overwrite drive={self.path} reason=not_hdd")
+
+        resume_from_index = 0
+        if use_recovery:
+            completed_step_names = [
+                entry.split(":", 1)[1]
+                for entry in recovery_state.step_history
+                if isinstance(entry, str) and entry.startswith("done:")
+            ]
+            if completed_step_names:
+                last_completed = completed_step_names[-1]
+                for idx, (name, _func) in enumerate(steps):
+                    if name == last_completed:
+                        resume_from_index = idx + 1
+                        break
+
+            # Mapper open/close semantics require replay from open step when
+            # resuming in the middle of mapped-device operations.
+            step_names = [name for name, _ in steps]
+            if "open_encrypted_container" in step_names and "close_encrypted_container" in step_names:
+                open_index = step_names.index("open_encrypted_container")
+                close_index = step_names.index("close_encrypted_container")
+                if open_index < resume_from_index <= close_index:
+                    resume_from_index = open_index
+
+            if resume_from_index > 0:
+                log_info(f"Recovery resuming drive={self.path} from_step_index={resume_from_index}")
+                print(f"[INFO] Resuming wipe at step index {resume_from_index} for {self.path}")
+
         try:
-            failed_step = "generate_temporary_key"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._generate_temporary_key()
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
+            for idx, (step_name, step_func) in enumerate(steps):
+                if idx < resume_from_index:
+                    continue
 
-            failed_step = "create_luks2_container"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._create_luks2_container()
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
+                failed_step = step_name
+                if use_recovery:
+                    recovery_state.mark_step_started(step_name)
+                    recovery.save_state(state_dir, recovery_state)
 
-            failed_step = "open_encrypted_container"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._open_encrypted_container()
-            mapping_open = True
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-
-            failed_step = "write_across_encrypted_drive"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._write_across_encrypted_drive()
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-
-            failed_step = "close_encrypted_container"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._close_encrypted_container()
-            mapping_open = False
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-
-            failed_step = "destroy_luks2_container"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._destroy_luks2_container()
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-
-            failed_step = "remove_residual_signatures"
-            step_start = time.perf_counter()
-            log_info(f"Starting wipe step={failed_step} drive={self.path}")
-            self._remove_residual_signatures()
-            step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-
-            if getattr(self.drive, "is_hdd", False):
-                failed_step = "final_hdd_overwrite"
                 step_start = time.perf_counter()
                 log_info(f"Starting wipe step={failed_step} drive={self.path}")
-                self._final_hdd_overwrite()
+                step_func()
+
+                if failed_step == "open_encrypted_container":
+                    mapping_open = True
+                elif failed_step == "close_encrypted_container":
+                    mapping_open = False
+
                 step_durations_seconds[failed_step] = round(time.perf_counter() - step_start, 3)
-            else:
-                print("[INFO] Skipping final HDD overwrite since drive is not detected as HDD.")
-                log_info(f"Skipping final_hdd_overwrite drive={self.path} reason=not_hdd")
+
+                if use_recovery:
+                    recovery_state.mark_step_completed(step_name)
+                    recovery.save_state(state_dir, recovery_state)
 
             status = "dry_run" if self.dry_run else "success"
             failed_step = None
@@ -106,6 +188,9 @@ class WipeEngine:
             error_message = str(exc)
             print(f"[ERROR] Wipe failed at step '{failed_step}': {error_message}")
             log_error(f"Wipe failed drive={self.path} step={failed_step} error={error_message}")
+            if use_recovery:
+                recovery_state.mark_interrupted(error_message)
+                recovery.save_state(state_dir, recovery_state)
 
         finally:
             cleanup_errors = []
@@ -120,14 +205,17 @@ class WipeEngine:
                 except Exception as exc:
                     cleanup_errors.append(f"close_encrypted_container: {exc}")
 
-            try:
-                cleanup_step_start = time.perf_counter()
-                self._delete_temporary_key()
-                step_durations_seconds["cleanup_delete_temporary_key"] = round(
-                    time.perf_counter() - cleanup_step_start, 3
-                )
-            except Exception as exc:
-                cleanup_errors.append(f"delete_temporary_key: {exc}")
+            if not (preserve_key_on_failure and status == "failed"):
+                try:
+                    cleanup_step_start = time.perf_counter()
+                    self._delete_temporary_key()
+                    step_durations_seconds["cleanup_delete_temporary_key"] = round(
+                        time.perf_counter() - cleanup_step_start, 3
+                    )
+                except Exception as exc:
+                    cleanup_errors.append(f"delete_temporary_key: {exc}")
+            else:
+                log_info(f"Preserving temporary keyfile for resume drive={self.path} keyfile={self.keyfile}")
 
             finished_at = datetime.now(timezone.utc).isoformat()
             total_duration_seconds = max(0.001, round(time.perf_counter() - total_start_perf, 3))
@@ -142,6 +230,9 @@ class WipeEngine:
                     status = "failed"
                     failed_step = "cleanup"
                 log_error(f"Wipe cleanup issue drive={self.path} details={error_message}")
+                if use_recovery:
+                    recovery_state.mark_failed(error_message)
+                    recovery.save_state(state_dir, recovery_state)
 
         if status != "failed":
             log_info(
@@ -256,6 +347,11 @@ class WipeResult:
         step_durations_seconds: dict[str, float] | None = None,
         smart_before: dict | None = None,
         verification_result: object | None = None,
+        recovery_resumed: bool = False,
+        recovery_session_id: str | None = None,
+        recovery_resume_attempts: int = 0,
+        recovery_state_status: str | None = None,
+        recovery_resume_source_status: str | None = None,
     ):
         self.status = status
         self.drive_path = drive_path
@@ -267,6 +363,11 @@ class WipeResult:
         self.step_durations_seconds = step_durations_seconds or {}
         self.smart_before = smart_before
         self.verification_result = verification_result
+        self.recovery_resumed = recovery_resumed
+        self.recovery_session_id = recovery_session_id
+        self.recovery_resume_attempts = recovery_resume_attempts
+        self.recovery_state_status = recovery_state_status
+        self.recovery_resume_source_status = recovery_resume_source_status
 
     def format_duration_summary(self) -> str:
         """Format duration metrics as human-readable output."""

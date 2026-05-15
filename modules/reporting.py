@@ -5,12 +5,16 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from modules.version import AppVersion
 
+VERSION = AppVersion()
 
 @dataclass
 class WipeReport:
 	"""Comprehensive wipe operation report structure."""
-	report_version: str = "1.0"
+	app_name: str = VERSION.app_name
+	app_version: str = VERSION.app_version
+	report_version: str = VERSION.report_schema_version
 	timestamp_utc: str = ""
 	operator_identifier: str = "unknown"
 	hostname: str = ""
@@ -41,6 +45,11 @@ class WipeReport:
 	verification_checks_passed: list[str] = field(default_factory=list)
 	verification_checks_failed: list[str] = field(default_factory=list)
 	verification_errors: list[str] = field(default_factory=list)
+	recovery_resumed: bool = False
+	recovery_session_id: Optional[str] = None
+	recovery_resume_attempts: int = 0
+	recovery_state_status: Optional[str] = None
+	recovery_resume_source_status: Optional[str] = None
 
 
 def _serialize_drive_minimal(drive: Any) -> dict[str, Any]:
@@ -155,6 +164,14 @@ def _format_duration(seconds: float) -> str:
 	return f"{hours}h {minutes}m {secs:.2f}s"
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+	"""Best-effort integer conversion with fallback default."""
+	try:
+		return int(value)
+	except (TypeError, ValueError):
+		return default
+
+
 def generate_wipe_report(
 	drive: Any,
 	wipe_result: Any,
@@ -190,6 +207,11 @@ def generate_wipe_report(
 	verification_passed = []
 	verification_failed = []
 	verification_errors = []
+	recovery_resumed = bool(getattr(wipe_result, "recovery_resumed", False))
+	recovery_session_id = getattr(wipe_result, "recovery_session_id", None)
+	recovery_resume_attempts = _safe_int(getattr(wipe_result, "recovery_resume_attempts", 0), 0)
+	recovery_state_status = getattr(wipe_result, "recovery_state_status", None)
+	recovery_resume_source_status = getattr(wipe_result, "recovery_resume_source_status", None)
 	
 	if verification_result:
 		verification_status = getattr(verification_result, "status", "pending")
@@ -228,6 +250,11 @@ def generate_wipe_report(
 		verification_checks_passed=verification_passed,
 		verification_checks_failed=verification_failed,
 		verification_errors=verification_errors,
+		recovery_resumed=recovery_resumed,
+		recovery_session_id=recovery_session_id,
+		recovery_resume_attempts=recovery_resume_attempts,
+		recovery_state_status=recovery_state_status,
+		recovery_resume_source_status=recovery_resume_source_status,
 	)
 	
 	return report
@@ -238,6 +265,10 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 	level = _normalize_detail_level(detail_level)
 
 	base_report = {
+		"app": {
+			"name": report.app_name,
+			"version": report.app_version,
+		},
 		"report_version": report.report_version,
 		"report_detail_level": level,
 		"timestamp_utc": report.timestamp_utc,
@@ -259,6 +290,9 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 		},
 		"verification": {
 			"status": report.verification_status,
+		},
+		"recovery": {
+			"resumed": report.recovery_resumed,
 		},
 	}
 
@@ -292,6 +326,13 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 				"checks_failed_count": len(report.verification_checks_failed),
 			}
 		)
+		base_report["recovery"].update(
+			{
+				"resume_attempts": report.recovery_resume_attempts,
+				"state_status": report.recovery_state_status,
+				"resume_source_status": report.recovery_resume_source_status,
+			}
+		)
 
 	if level == "verbose":
 		base_report["drive"]["size"] = report.drive_size
@@ -303,6 +344,7 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 				"verification_errors": report.verification_errors,
 			}
 		)
+		base_report["recovery"]["session_id"] = report.recovery_session_id
 
 	return base_report
 
@@ -324,6 +366,7 @@ def wipe_report_to_text(report: WipeReport, detail_level: str = "verbose") -> st
 	# Header
 	lines.append("=" * 80)
 	lines.append(" " * 20 + "SECUREWIPE OPERATION REPORT")
+	lines.append(f" " * 20 + f"{report.app_name} v{report.app_version}")
 	lines.append("=" * 80)
 	lines.append("")
 	
@@ -376,6 +419,19 @@ def wipe_report_to_text(report: WipeReport, detail_level: str = "verbose") -> st
 	
 	if report.duration_seconds:
 		lines.append(f"  Duration:   {_format_duration(report.duration_seconds)}")
+	lines.append("")
+
+	# Recovery state
+	lines.append("RECOVERY STATUS")
+	lines.append(f"  Resumed:    {'Yes' if report.recovery_resumed else 'No'}")
+	if level in {"standard", "verbose"}:
+		lines.append(f"  Attempts:   {report.recovery_resume_attempts}")
+		if report.recovery_state_status:
+			lines.append(f"  State:      {report.recovery_state_status}")
+		if report.recovery_resume_source_status:
+			lines.append(f"  Source:     {report.recovery_resume_source_status}")
+	if level == "verbose" and report.recovery_session_id:
+		lines.append(f"  Session ID: {report.recovery_session_id}")
 	lines.append("")
 	
 	# Step timeline
