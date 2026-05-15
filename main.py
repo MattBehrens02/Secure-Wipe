@@ -27,7 +27,39 @@ def main() -> int:
 	dir_check.ensure_runtime_directories(app_config)
 	app_logging.setup_logging(app_config)
 
+	recovery_cfg = getattr(app_config, "recovery", object())
+	lock_file_path = getattr(recovery_cfg, "lock_file_path", "./state/wipe.lock")
+	lock_stale_seconds = int(getattr(recovery_cfg, "lock_stale_seconds", 7200))
+	resume_max_age_seconds = int(getattr(recovery_cfg, "resume_state_max_age_seconds", 86400))
+	allow_failed_resume = bool(getattr(recovery_cfg, "allow_failed_resume", False))
+	state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
+
+	lock_acquired, lock_error = recovery.acquire_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
+	if not lock_acquired:
+		print(f"Recovery lock error: {lock_error}", file=sys.stderr)
+		app_logging.log_error(f"Recovery lock acquisition failed path={lock_file_path} error={lock_error}")
+		terminal_ui.exit_alt_screen()
+		return 1
+
 	try: 
+		incomplete_states = recovery.list_incomplete_states(state_dir)
+		resume_candidates = [
+			state
+			for state in incomplete_states
+			if recovery.should_offer_resume(
+				state,
+				max_age_seconds=resume_max_age_seconds,
+				allow_failed_resume=allow_failed_resume,
+			)
+		]
+
+		if resume_candidates:
+			print(
+				f"Found {len(resume_candidates)} resumable recovery state(s). "
+				"Resume/restart flow will be enabled in next recovery integration step."
+			)
+			app_logging.log_info(f"Recovery detected resumable_states={len(resume_candidates)}")
+
 		print(
 			"Loaded configuration: "
 			f"environment={app_config.runtime.environment}, "
@@ -50,9 +82,19 @@ def main() -> int:
 
 		for drive in selected_drives:
 			engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
-			result = engine.execute()
+			result = engine.execute_with_recovery(app_config)
 			verification_result = None
 			print(f"Wipe result for {drive.path}: {result.status}")
+			if getattr(result, "recovery_resumed", False):
+				resume_attempts = getattr(result, "recovery_resume_attempts", 0)
+				resume_source = getattr(result, "recovery_resume_source_status", "unknown")
+				print(
+					f"Recovery state for {drive.path}: resumed from {resume_source} "
+					f"(attempt {resume_attempts})"
+				)
+				app_logging.log_info(
+					f"Recovery resumed drive={drive.path} source_status={resume_source} attempts={resume_attempts}"
+				)
 			if result.status == "failed":
 				failed_step = getattr(result, "failed_step", None)
 				error_message = getattr(result, "error_message", None)
@@ -106,6 +148,7 @@ def main() -> int:
 				app_logging.log_error(f"Failed to save wipe report: {report_error}")
 
 	finally:
+		recovery.release_lock(lock_file_path)
 		terminal_ui.exit_alt_screen()
 
 	return 0

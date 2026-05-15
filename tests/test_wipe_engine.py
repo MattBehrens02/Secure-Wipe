@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from modules.wipe_engine import WipeEngine
 
@@ -291,6 +291,86 @@ class TestWipeEngine(unittest.TestCase):
         self.assertIn("Generate Temporary Key: 0.1s", summary)
         self.assertIn("Create Luks2 Container: 1.2s", summary)
         self.assertIn("Write Across Encrypted Drive: 8.5s", summary)
+
+    def test_execute_with_recovery_creates_and_clears_state_on_success(self):
+        engine = WipeEngine(self.drive, dry_run=True)
+        cfg = SimpleNamespace(
+            paths=SimpleNamespace(state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+                max_resume_attempts=3,
+            ),
+        )
+
+        with patch("modules.wipe_engine.recovery.load_state", return_value=None), \
+             patch("modules.wipe_engine.recovery.save_state") as save_state, \
+             patch("modules.wipe_engine.recovery.clear_state") as clear_state, \
+             patch.object(engine, "_generate_temporary_key"), \
+             patch.object(engine, "_create_luks2_container"), \
+             patch.object(engine, "_open_encrypted_container"), \
+             patch.object(engine, "_write_across_encrypted_drive"), \
+             patch.object(engine, "_close_encrypted_container"), \
+             patch.object(engine, "_destroy_luks2_container"), \
+             patch.object(engine, "_remove_residual_signatures"):
+            result = engine.execute_with_recovery(cfg)
+
+        self.assertEqual(result.status, "dry_run")
+        self.assertFalse(result.recovery_resumed)
+        self.assertGreaterEqual(save_state.call_count, 2)
+        clear_state.assert_called_once_with("/tmp/state", "/dev/sdz")
+
+    def test_execute_with_recovery_resumes_after_last_completed_step(self):
+        engine = WipeEngine(self.drive, dry_run=False)
+        cfg = SimpleNamespace(
+            paths=SimpleNamespace(state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+                max_resume_attempts=3,
+            ),
+        )
+        state = SimpleNamespace(
+            step_history=["done:generate_temporary_key", "done:create_luks2_container"],
+            resume_attempts=0,
+            max_resume_attempts=3,
+            status="interrupted",
+            increment_resume_attempts=Mock(),
+            mark_step_started=Mock(),
+            mark_step_completed=Mock(),
+            mark_completed=Mock(),
+            mark_interrupted=Mock(),
+            mark_failed=Mock(),
+        )
+        calls = []
+
+        with patch("modules.wipe_engine.recovery.load_state", return_value=state), \
+             patch("modules.wipe_engine.recovery.should_offer_resume", return_value=True), \
+             patch("modules.wipe_engine.recovery.save_state"), \
+             patch("modules.wipe_engine.recovery.clear_state"), \
+             patch.object(engine, "_generate_temporary_key", side_effect=lambda: calls.append("_generate_temporary_key")), \
+             patch.object(engine, "_create_luks2_container", side_effect=lambda: calls.append("_create_luks2_container")), \
+             patch.object(engine, "_open_encrypted_container", side_effect=lambda: calls.append("_open_encrypted_container")), \
+             patch.object(engine, "_write_across_encrypted_drive", side_effect=lambda: calls.append("_write_across_encrypted_drive")), \
+             patch.object(engine, "_close_encrypted_container", side_effect=lambda: calls.append("_close_encrypted_container")), \
+             patch.object(engine, "_destroy_luks2_container", side_effect=lambda: calls.append("_destroy_luks2_container")), \
+             patch.object(engine, "_remove_residual_signatures", side_effect=lambda: calls.append("_remove_residual_signatures")):
+            result = engine.execute_with_recovery(cfg)
+
+        self.assertEqual(result.status, "success")
+        self.assertTrue(result.recovery_resumed)
+        self.assertEqual(result.recovery_resume_source_status, "interrupted")
+        self.assertEqual(
+            calls,
+            [
+                "_open_encrypted_container",
+                "_write_across_encrypted_drive",
+                "_close_encrypted_container",
+                "_destroy_luks2_container",
+                "_remove_residual_signatures",
+            ],
+        )
+        state.increment_resume_attempts.assert_called_once()
 
 
 if __name__ == "__main__":

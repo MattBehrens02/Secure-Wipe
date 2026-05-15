@@ -99,7 +99,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
             checks_passed=["luks_header_destroyed"],
             verification_errors=[],
         )
-        engine_instance.execute.side_effect = [
+        engine_instance.execute_with_recovery.side_effect = [
             SimpleNamespace(status="dry_run"),
             SimpleNamespace(status="dry_run"),
         ]

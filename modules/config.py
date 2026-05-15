@@ -52,6 +52,9 @@ class RecoveryConfig:
     checkpoint_interval_seconds: int = 60
     max_resume_attempts: int = 3
     lock_file_path: str = "/app/state/wipe.lock"
+    lock_stale_seconds: int = 7200
+    resume_state_max_age_seconds: int = 86400
+    allow_failed_resume: bool = False
 
 @dataclass
 class ReportingConfig:
@@ -94,6 +97,14 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "runtime": {"environment", "dry_run"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
+    "recovery": {
+        "checkpoint_interval_seconds",
+        "max_resume_attempts",
+        "lock_file_path",
+        "lock_stale_seconds",
+        "resume_state_max_age_seconds",
+        "allow_failed_resume",
+    },
     "reporting": {"reports_enabled", "formats", "detail_level", "operator_identifier"},
     "logging": {"enabled", "level"},
 }
@@ -118,6 +129,21 @@ def _apply_safety_overrides(config: AppConfig, safety_data: dict[str, Any]) -> N
 def _apply_drive_detection_overrides(config: AppConfig, drive_detection_data: dict[str, Any]) -> None:
     if "collect_smart_info" in drive_detection_data:
         config.drive_detection.collect_smart_info = bool(drive_detection_data["collect_smart_info"])
+
+
+def _apply_recovery_overrides(config: AppConfig, recovery_data: dict[str, Any]) -> None:
+    if "checkpoint_interval_seconds" in recovery_data:
+        config.recovery.checkpoint_interval_seconds = int(recovery_data["checkpoint_interval_seconds"])
+    if "max_resume_attempts" in recovery_data:
+        config.recovery.max_resume_attempts = int(recovery_data["max_resume_attempts"])
+    if "lock_file_path" in recovery_data:
+        config.recovery.lock_file_path = str(recovery_data["lock_file_path"])
+    if "lock_stale_seconds" in recovery_data:
+        config.recovery.lock_stale_seconds = int(recovery_data["lock_stale_seconds"])
+    if "resume_state_max_age_seconds" in recovery_data:
+        config.recovery.resume_state_max_age_seconds = int(recovery_data["resume_state_max_age_seconds"])
+    if "allow_failed_resume" in recovery_data:
+        config.recovery.allow_failed_resume = bool(recovery_data["allow_failed_resume"])
 
 
 def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
@@ -173,6 +199,21 @@ def _validate_config(config: AppConfig) -> None:
     if not isinstance(config.drive_detection.collect_smart_info, bool):
         raise ValueError("drive_detection.collect_smart_info must be a boolean")
 
+    if config.recovery.checkpoint_interval_seconds <= 0:
+        raise ValueError("recovery.checkpoint_interval_seconds must be > 0")
+
+    if config.recovery.max_resume_attempts < 0:
+        raise ValueError("recovery.max_resume_attempts must be >= 0")
+
+    if config.recovery.lock_stale_seconds <= 0:
+        raise ValueError("recovery.lock_stale_seconds must be > 0")
+
+    if config.recovery.resume_state_max_age_seconds <= 0:
+        raise ValueError("recovery.resume_state_max_age_seconds must be > 0")
+
+    if not isinstance(config.recovery.allow_failed_resume, bool):
+        raise ValueError("recovery.allow_failed_resume must be a boolean")
+
     if not isinstance(config.logging.enabled, bool):
         raise ValueError("logging.enabled must be a boolean")
 
@@ -220,6 +261,9 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
         drive_detection_data = raw_data.get("drive_detection", {})
         _apply_drive_detection_overrides(config, drive_detection_data)
 
+        recovery_data = raw_data.get("recovery", {})
+        _apply_recovery_overrides(config, recovery_data)
+
         reporting_data = raw_data.get("reporting", {})
         _apply_reporting_overrides(config, reporting_data)
 
@@ -234,7 +278,8 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
         config.paths.reports_dir = str(_project_root / "reports")
         config.paths.state_dir   = str(_project_root / "state")
         config.paths.temp_dir    = str(_project_root / "tmp")
-        config.recovery.lock_file_path = str(_project_root / "state" / "wipe.lock")
+        if config.recovery.lock_file_path == "/app/state/wipe.lock":
+            config.recovery.lock_file_path = str(_project_root / "state" / "wipe.lock")
 
 
     return config

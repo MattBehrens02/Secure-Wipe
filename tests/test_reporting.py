@@ -16,6 +16,9 @@ from modules.reporting import (
     _format_duration,
     build_detection_report,
 )
+from modules.version import AppVersion
+
+VERSION = AppVersion()
 
 
 class TestWipeReport(unittest.TestCase):
@@ -110,6 +113,21 @@ class TestGenerateWipeReport(unittest.TestCase):
         self.assertEqual(report.verification_status, "passed")
         self.assertEqual(report.verification_checks_passed, ["luks_header_destroyed", "filesystem_signatures_absent"])
 
+    def test_generate_wipe_report_includes_recovery_resume_fields(self):
+        self.wipe_result.recovery_resumed = True
+        self.wipe_result.recovery_session_id = "sess-123"
+        self.wipe_result.recovery_resume_attempts = 2
+        self.wipe_result.recovery_state_status = "completed"
+        self.wipe_result.recovery_resume_source_status = "interrupted"
+
+        report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
+
+        self.assertTrue(report.recovery_resumed)
+        self.assertEqual(report.recovery_session_id, "sess-123")
+        self.assertEqual(report.recovery_resume_attempts, 2)
+        self.assertEqual(report.recovery_state_status, "completed")
+        self.assertEqual(report.recovery_resume_source_status, "interrupted")
+
 
 class TestJsonSerialization(unittest.TestCase):
     def setUp(self):
@@ -130,6 +148,8 @@ class TestJsonSerialization(unittest.TestCase):
     def test_wipe_report_to_json_valid_structure(self):
         json_str = wipe_report_to_json(self.report)
         parsed = json.loads(json_str)
+        self.assertEqual(parsed["app"]["name"], "Secure Wipe")
+        self.assertEqual(parsed["app"]["version"], VERSION.app_version)
         self.assertEqual(parsed["wipe_status"]["status"], "success")
         self.assertEqual(parsed["operator_identifier"], "tech_john")
 
@@ -149,6 +169,20 @@ class TestJsonSerialization(unittest.TestCase):
         self.assertEqual(parsed["report_detail_level"], "standard")
         self.assertIn("wipe_method", parsed)
         self.assertNotIn("step_durations", parsed["wipe_status"])
+
+    def test_wipe_report_to_json_verbose_includes_recovery_state(self):
+        self.report.recovery_resumed = True
+        self.report.recovery_session_id = "sess-123"
+        self.report.recovery_resume_attempts = 1
+        self.report.recovery_state_status = "completed"
+        self.report.recovery_resume_source_status = "interrupted"
+
+        json_str = wipe_report_to_json(self.report, detail_level="verbose")
+        parsed = json.loads(json_str)
+
+        self.assertTrue(parsed["recovery"]["resumed"])
+        self.assertEqual(parsed["recovery"]["session_id"], "sess-123")
+        self.assertEqual(parsed["recovery"]["resume_attempts"], 1)
 
 
 class TestTextFormatting(unittest.TestCase):
@@ -178,6 +212,7 @@ class TestTextFormatting(unittest.TestCase):
 
     def test_wipe_report_to_text_success_formatting(self):
         text = wipe_report_to_text(self.report)
+        self.assertIn(f"Secure Wipe v{VERSION.app_version}", text)
         self.assertIn("✓ SUCCESS", text)
 
     def test_wipe_report_to_text_minimal_omits_verbose_sections(self):

@@ -27,6 +27,13 @@ class TestConfig(unittest.TestCase):
             [drive_detection]
             collect_smart_info = false
 
+            [recovery]
+            checkpoint_interval_seconds = 30
+            max_resume_attempts = 5
+            lock_stale_seconds = 3600
+            resume_state_max_age_seconds = 43200
+            allow_failed_resume = true
+
             [reporting]
             reports_enabled = true
             formats = ["json"]
@@ -49,6 +56,11 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.safety.mount_handling_mode, "allow")
         self.assertEqual(cfg.safety.confirmation_steps, 1)
         self.assertFalse(cfg.drive_detection.collect_smart_info)
+        self.assertEqual(cfg.recovery.checkpoint_interval_seconds, 30)
+        self.assertEqual(cfg.recovery.max_resume_attempts, 5)
+        self.assertEqual(cfg.recovery.lock_stale_seconds, 3600)
+        self.assertEqual(cfg.recovery.resume_state_max_age_seconds, 43200)
+        self.assertTrue(cfg.recovery.allow_failed_resume)
         self.assertEqual(cfg.reporting.formats, ["json"])
         self.assertEqual(cfg.reporting.detail_level, "standard")
         self.assertTrue(cfg.logging.enabled)
