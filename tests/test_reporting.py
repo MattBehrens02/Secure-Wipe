@@ -92,6 +92,24 @@ class TestGenerateWipeReport(unittest.TestCase):
         self.assertEqual(report.failed_step, "write_across_encrypted_drive")
         self.assertEqual(report.error_message, "Device I/O error")
 
+    def test_generate_wipe_report_with_verification_result(self):
+        verification_result = SimpleNamespace(
+            status="passed",
+            checks_passed=["luks_header_destroyed", "filesystem_signatures_absent"],
+            checks_failed=[],
+            verification_errors=[],
+        )
+
+        report = generate_wipe_report(
+            self.drive,
+            self.wipe_result,
+            self.app_config,
+            verification_result=verification_result,
+        )
+
+        self.assertEqual(report.verification_status, "passed")
+        self.assertEqual(report.verification_checks_passed, ["luks_header_destroyed", "filesystem_signatures_absent"])
+
 
 class TestJsonSerialization(unittest.TestCase):
     def setUp(self):

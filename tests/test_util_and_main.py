@@ -64,10 +64,14 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.smartctl.is_smartctl_available", return_value=True)
     @patch("main.dir_check.ensure_runtime_directories")
     @patch("main.drive_detection.run")
+    @patch("main.reporting.save_wipe_report", return_value=("/tmp/report.json", "/tmp/report.txt"))
+    @patch("main.reporting.generate_wipe_report", return_value=SimpleNamespace())
     @patch("main.wipe_engine.WipeEngine")
     def test_main_success_flow_runs_engine_for_each_drive(
         self,
         mock_engine_cls,
+        _mock_generate_report,
+        _mock_save_report,
         mock_detect,
         _mock_dirs,
         _mock_smartctl,
@@ -77,6 +81,9 @@ class TestUtilitiesAndMain(unittest.TestCase):
         cfg = SimpleNamespace(
             runtime=SimpleNamespace(environment="test", dry_run=True),
             drive_detection=SimpleNamespace(collect_smart_info=False),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="test-operator"),
+            paths=SimpleNamespace(reports_dir="/tmp"),
+            verification=SimpleNamespace(enabled=True),
         )
         mock_load_config.return_value = cfg
         mock_ui_from_config.return_value = Mock()
@@ -86,6 +93,12 @@ class TestUtilitiesAndMain(unittest.TestCase):
         mock_detect.return_value = [drive_a, drive_b]
 
         engine_instance = Mock()
+        engine_instance.verify_with_config.return_value = SimpleNamespace(
+            status="dry_run",
+            checks_failed=[],
+            checks_passed=["luks_header_destroyed"],
+            verification_errors=[],
+        )
         engine_instance.execute.side_effect = [
             SimpleNamespace(status="dry_run"),
             SimpleNamespace(status="dry_run"),
@@ -95,6 +108,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
         rc = main.main()
         self.assertEqual(rc, 0)
         self.assertEqual(mock_engine_cls.call_count, 2)
+        self.assertEqual(engine_instance.verify_with_config.call_count, 2)
 
     def test_placeholder_modules_import(self):
         import modules.recovery  # noqa: F401
