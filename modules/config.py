@@ -105,7 +105,8 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
         "resume_state_max_age_seconds",
         "allow_failed_resume",
     },
-    "reporting": {"reports_enabled", "formats", "detail_level", "operator_identifier"},
+    "reporting": {"formats", "detail_level"},
+    "upload": {"enabled", "repo", "branch", "retry_count"},
     "logging": {"enabled", "level"},
 }
 
@@ -166,14 +167,21 @@ def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
 
 
 def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]) -> None:
-    if "reports_enabled" in reporting_data:
-        config.reporting.reports_enabled = bool(reporting_data["reports_enabled"])
     if "formats" in reporting_data:
         config.reporting.formats = list(reporting_data["formats"])
     if "detail_level" in reporting_data:
         config.reporting.detail_level = str(reporting_data["detail_level"]).lower()
-    if "operator_identifier" in reporting_data:
-        config.reporting.operator_identifier = str(reporting_data["operator_identifier"])
+
+
+def _apply_upload_overrides(config: AppConfig, upload_data: dict[str, Any]) -> None:
+    if "enabled" in upload_data:
+        config.upload.enabled = bool(upload_data["enabled"])
+    if "repo" in upload_data:
+        config.upload.repo = str(upload_data["repo"]) if upload_data["repo"] else None
+    if "branch" in upload_data:
+        config.upload.branch = str(upload_data["branch"])
+    if "retry_count" in upload_data:
+        config.upload.retry_count = int(upload_data["retry_count"])
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
@@ -266,6 +274,9 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
 
         reporting_data = raw_data.get("reporting", {})
         _apply_reporting_overrides(config, reporting_data)
+
+        upload_data = raw_data.get("upload", {})
+        _apply_upload_overrides(config, upload_data)
 
         logging_data = raw_data.get("logging", {})
         _apply_logging_overrides(config, logging_data)
