@@ -70,6 +70,23 @@ def main() -> int:
 			duration_summary = getattr(result, "format_duration_summary", lambda: "")()
 			if duration_summary:
 				print(duration_summary)
+			
+			# Generate and save wipe report
+			try:
+				report = reporting.generate_wipe_report(drive, result, app_config)
+				reports_dir = getattr(app_config.paths, "reports_dir", "./reports")
+				detail_level = getattr(app_config.reporting, "detail_level", "verbose")
+				json_path, text_path = reporting.save_wipe_report(
+					report,
+					reports_dir,
+					detail_level=detail_level,
+				)
+				print(f"\nWipe report saved:")
+				print(f"  JSON: {json_path}")
+				print(f"  Text: {text_path}")
+				app_logging.log_info(f"Wipe report saved drive={drive.path} json={json_path} text={text_path}")
+			except Exception as report_error:
+				app_logging.log_error(f"Failed to save wipe report: {report_error}")
 
 	finally:
 		terminal_ui.exit_alt_screen()

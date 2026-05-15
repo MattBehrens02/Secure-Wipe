@@ -1,12 +1,253 @@
 import json
-import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
+import tempfile
 
-from modules import reporting
+from modules.reporting import (
+    WipeReport,
+    _serialize_wipe_report,
+    generate_wipe_report,
+    wipe_report_to_json,
+    wipe_report_to_text,
+    save_wipe_report,
+    _humanize_size,
+    _format_duration,
+    build_detection_report,
+)
 
 
-class TestReporting(unittest.TestCase):
+class TestWipeReport(unittest.TestCase):
+    def test_wipe_report_creation_with_defaults(self):
+        report = WipeReport()
+        self.assertEqual(report.report_version, "1.0")
+        self.assertEqual(report.operator_identifier, "unknown")
+        self.assertEqual(report.encryption, "LUKS2")
+        self.assertEqual(report.key_size_bits, 256)
+        self.assertEqual(report.scrub_pattern, "nnsa")
+        self.assertFalse(report.hdd_final_pass)
+        self.assertEqual(report.status, "unknown")
+        self.assertEqual(report.step_durations, {})
+
+    def test_wipe_report_creation_with_values(self):
+        report = WipeReport(
+            timestamp_utc="2026-05-15T14:30:00Z",
+            operator_identifier="tech_john",
+            status="success",
+            duration_seconds=1800.5,
+        )
+        self.assertEqual(report.timestamp_utc, "2026-05-15T14:30:00Z")
+        self.assertEqual(report.operator_identifier, "tech_john")
+        self.assertEqual(report.status, "success")
+        self.assertEqual(report.duration_seconds, 1800.5)
+
+
+class TestGenerateWipeReport(unittest.TestCase):
+    def setUp(self):
+        self.drive = Mock()
+        self.drive.path = "/dev/sda"
+        self.drive.name = "sda"
+        self.drive.model = "Samsung SSD 970"
+        self.drive.vendor = "Samsung"
+        self.drive.serial = "S4FC123456"
+        self.drive.size = "1000204886016"
+        self.drive.media_type = "SSD"
+        self.drive.transport = "nvme"
+        self.drive.removable = False
+        self.wipe_result = Mock()
+        self.wipe_result.status = "success"
+        self.wipe_result.started_at = "2026-05-15T14:02:45Z"
+        self.wipe_result.finished_at = "2026-05-15T14:32:45Z"
+        self.wipe_result.duration_seconds = 1800.342
+        self.wipe_result.failed_step = None
+        self.wipe_result.error_message = None
+        self.wipe_result.step_durations_seconds = {"generate_temporary_key": 0.145}
+        self.app_config = Mock()
+        self.app_config.runtime = Mock()
+        self.app_config.runtime.environment = "production"
+        self.app_config.reporting = Mock()
+        self.app_config.reporting.operator_identifier = "tech_john_admin"
+
+    def test_generate_wipe_report_success(self):
+        report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
+        self.assertEqual(report.drive_path, "/dev/sda")
+        self.assertEqual(report.drive_model, "Samsung SSD 970")
+        self.assertEqual(report.drive_serial, "S4FC123456")
+        self.assertEqual(report.status, "success")
+        self.assertFalse(report.hdd_final_pass)
+
+    def test_generate_wipe_report_with_hdd(self):
+        self.drive.media_type = "HDD"
+        report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
+        self.assertEqual(report.drive_media_type, "HDD")
+        self.assertTrue(report.hdd_final_pass)
+
+    def test_generate_wipe_report_failed_wipe(self):
+        self.wipe_result.status = "failed"
+        self.wipe_result.failed_step = "write_across_encrypted_drive"
+        self.wipe_result.error_message = "Device I/O error"
+        report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.failed_step, "write_across_encrypted_drive")
+        self.assertEqual(report.error_message, "Device I/O error")
+
+
+class TestJsonSerialization(unittest.TestCase):
+    def setUp(self):
+        self.report = WipeReport(
+            timestamp_utc="2026-05-15T14:30:00Z",
+            operator_identifier="tech_john",
+            status="success",
+            drive_path="/dev/sda",
+            duration_seconds=1800.5,
+        )
+
+    def test_wipe_report_to_json_pretty(self):
+        json_str = wipe_report_to_json(self.report, pretty=True)
+        self.assertIn("{\n", json_str)
+        self.assertIn('"report_version": "1.0"', json_str)
+        self.assertIn('"status": "success"', json_str)
+
+    def test_wipe_report_to_json_valid_structure(self):
+        json_str = wipe_report_to_json(self.report)
+        parsed = json.loads(json_str)
+        self.assertEqual(parsed["wipe_status"]["status"], "success")
+        self.assertEqual(parsed["operator_identifier"], "tech_john")
+
+    def test_wipe_report_to_json_minimal_omits_verbose_fields(self):
+        json_str = wipe_report_to_json(self.report, detail_level="minimal")
+        parsed = json.loads(json_str)
+        self.assertEqual(parsed["report_detail_level"], "minimal")
+        self.assertNotIn("wipe_method", parsed)
+        self.assertNotIn("platform", parsed["machine"])
+
+    def test_wipe_report_to_json_standard_includes_method_but_not_step_durations(self):
+        self.report.platform = "Linux-5.15"
+        self.report.drive_serial = "SER123"
+        self.report.step_durations = {"write_across_encrypted_drive": 1800.0}
+        json_str = wipe_report_to_json(self.report, detail_level="standard")
+        parsed = json.loads(json_str)
+        self.assertEqual(parsed["report_detail_level"], "standard")
+        self.assertIn("wipe_method", parsed)
+        self.assertNotIn("step_durations", parsed["wipe_status"])
+
+
+class TestTextFormatting(unittest.TestCase):
+    def setUp(self):
+        self.report = WipeReport(
+            timestamp_utc="2026-05-15T14:30:00Z",
+            operator_identifier="tech_john",
+            hostname="securewipe-01",
+            platform="Linux-5.15",
+            environment="production",
+            drive_path="/dev/sda",
+            drive_name="sda",
+            drive_model="Samsung SSD 970",
+            status="success",
+            duration_seconds=1800.5,
+            step_durations={"write_across_encrypted_drive": 1800.0},
+        )
+
+    def test_wipe_report_to_text_includes_headers(self):
+        text = wipe_report_to_text(self.report)
+        self.assertIn("SECUREWIPE OPERATION REPORT", text)
+        self.assertIn("TIMESTAMP", text)
+        self.assertIn("MACHINE INFORMATION", text)
+        self.assertIn("DRIVE METADATA", text)
+        self.assertIn("WIPE METHOD", text)
+        self.assertIn("WIPE RESULTS", text)
+
+    def test_wipe_report_to_text_success_formatting(self):
+        text = wipe_report_to_text(self.report)
+        self.assertIn("✓ SUCCESS", text)
+
+    def test_wipe_report_to_text_minimal_omits_verbose_sections(self):
+        text = wipe_report_to_text(self.report, detail_level="minimal")
+        self.assertNotIn("WIPE METHOD", text)
+        self.assertNotIn("STEP TIMELINE", text)
+        self.assertNotIn("Platform:", text)
+
+    def test_wipe_report_to_text_standard_includes_method_without_timeline(self):
+        text = wipe_report_to_text(self.report, detail_level="standard")
+        self.assertIn("WIPE METHOD", text)
+        self.assertNotIn("STEP TIMELINE", text)
+
+    def test_wipe_report_to_text_failed_formatting(self):
+        self.report.status = "failed"
+        self.report.failed_step = "write_across_encrypted_drive"
+        self.report.error_message = "Device I/O error"
+        text = wipe_report_to_text(self.report)
+        self.assertIn("✗ FAILED", text)
+        self.assertIn("FAILURE DETAILS", text)
+
+
+class TestUtilityFunctions(unittest.TestCase):
+    def test_humanize_size_bytes(self):
+        self.assertIn("B", _humanize_size("512"))
+
+    def test_humanize_size_gigabytes(self):
+        result = _humanize_size("1099511627776")
+        self.assertIn("TB", result)
+
+    def test_format_duration_seconds(self):
+        result = _format_duration(30.5)
+        self.assertIn("30.50s", result)
+
+    def test_format_duration_minutes(self):
+        result = _format_duration(90.5)
+        self.assertIn("1m", result)
+
+
+class TestSaveWipeReport(unittest.TestCase):
+    def setUp(self):
+        self.report = WipeReport(
+            timestamp_utc="2026-05-15T14:30:00Z",
+            operator_identifier="tech_john",
+            status="success",
+            drive_path="/dev/sda",
+            drive_serial="S4FC123456",
+        )
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        if Path(self.temp_dir).exists():
+            shutil.rmtree(self.temp_dir)
+
+    def test_save_wipe_report_creates_directory(self):
+        reports_dir = Path(self.temp_dir) / "nonexistent"
+        self.assertFalse(reports_dir.exists())
+        save_wipe_report(self.report, reports_dir)
+        self.assertTrue(reports_dir.exists())
+
+    def test_save_wipe_report_creates_json_file(self):
+        json_path, text_path = save_wipe_report(self.report, self.temp_dir)
+        self.assertTrue(json_path.exists())
+        self.assertTrue(json_path.suffix == ".json")
+
+    def test_save_wipe_report_creates_text_file(self):
+        json_path, text_path = save_wipe_report(self.report, self.temp_dir)
+        self.assertTrue(text_path.exists())
+        self.assertTrue(text_path.suffix == ".txt")
+
+    def test_save_wipe_report_json_content_valid(self):
+        json_path, text_path = save_wipe_report(self.report, self.temp_dir)
+        content = json_path.read_text()
+        parsed = json.loads(content)
+        self.assertEqual(parsed["wipe_status"]["status"], "success")
+        self.assertEqual(parsed["operator_identifier"], "tech_john")
+
+    def test_save_wipe_report_respects_minimal_detail_level(self):
+        json_path, text_path = save_wipe_report(self.report, self.temp_dir, detail_level="minimal")
+        parsed = json.loads(json_path.read_text())
+        text = text_path.read_text()
+        self.assertEqual(parsed["report_detail_level"], "minimal")
+        self.assertNotIn("wipe_method", parsed)
+        self.assertNotIn("WIPE METHOD", text)
+
+
+class TestDetectionReporting(unittest.TestCase):
     def setUp(self):
         self.cfg = SimpleNamespace(
             runtime=SimpleNamespace(environment="test", dry_run=True),
@@ -29,22 +270,15 @@ class TestReporting(unittest.TestCase):
         )
 
     def test_build_detection_report_verbose(self):
-        data = reporting.build_detection_report(self.cfg, [self.drive])
+        data = build_detection_report(self.cfg, [self.drive])
         self.assertEqual(data["selection"]["selected_count"], 1)
         self.assertEqual(data["drives"][0]["path"], "/dev/sda")
         self.assertIn("smart_data", data["drives"][0])
 
     def test_build_detection_report_minimal(self):
         self.cfg.reporting.detail_level = "minimal"
-        data = reporting.build_detection_report(self.cfg, [self.drive])
+        data = build_detection_report(self.cfg, [self.drive])
         self.assertEqual(set(data["drives"][0].keys()), {"path", "size"})
-
-    def test_write_json_report_creates_file(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = reporting.write_json_report({"x": 1}, tmpdir)
-            with open(out, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            self.assertEqual(loaded["x"], 1)
 
 
 if __name__ == "__main__":
