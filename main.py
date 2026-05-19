@@ -21,7 +21,10 @@ def _recovery_settings(app_config):
 def _clear_incomplete_states(state_dir: str) -> int:
 	incomplete_states = recovery.list_incomplete_states(state_dir)
 	for state in incomplete_states:
-		recovery.clear_state(state_dir, state.drive_path)
+		drive_serial = None
+		if isinstance(getattr(state, "metadata", None), dict):
+			drive_serial = str(state.metadata.get("drive_serial", "") or "").strip() or None
+		recovery.clear_state(state_dir, state.drive_path, drive_serial=drive_serial)
 	return len(incomplete_states)
 
 

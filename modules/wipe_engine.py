@@ -48,7 +48,8 @@ class WipeEngine:
         allow_failed_resume = bool(getattr(recovery_cfg, "allow_failed_resume", False))
         max_resume_attempts = int(getattr(recovery_cfg, "max_resume_attempts", 3))
 
-        state = recovery.load_state(state_dir, self.path)
+        drive_serial = str(getattr(self.drive, "serial", "") or "").strip() or None
+        state = recovery.load_state(state_dir, self.path, drive_serial=drive_serial)
         resumed_from_checkpoint = False
         resume_source_status = None
 
@@ -100,7 +101,7 @@ class WipeEngine:
         if result.status in {"success", "dry_run"}:
             state.mark_completed()
             recovery.save_state(state_dir, state)
-            recovery.clear_state(state_dir, self.path)
+            recovery.clear_state(state_dir, self.path, drive_serial=drive_serial)
         else:
             if state.status == "in_progress":
                 state.mark_interrupted(result.error_message)

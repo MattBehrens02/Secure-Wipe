@@ -318,7 +318,8 @@ class TestWipeEngine(unittest.TestCase):
         self.assertEqual(result.status, "dry_run")
         self.assertFalse(result.recovery_resumed)
         self.assertGreaterEqual(save_state.call_count, 2)
-        clear_state.assert_called_once_with("/tmp/state", "/dev/sdz")
+        clear_state.assert_called_once()
+        self.assertEqual(clear_state.call_args.args[:2], ("/tmp/state", "/dev/sdz"))
 
     def test_execute_with_recovery_resumes_after_last_completed_step(self):
         engine = WipeEngine(self.drive, dry_run=False)

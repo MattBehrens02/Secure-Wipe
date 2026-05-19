@@ -72,6 +72,30 @@ class TestRecoveryStatePersistence(unittest.TestCase):
             self.assertTrue(deleted)
             self.assertIsNone(loaded)
 
+    def test_save_and_load_state_prefers_serial_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = RecoveryState(
+                session_id="sess-serial",
+                drive_path="/dev/sdz",
+                status="interrupted",
+                metadata={"drive_serial": "SN-ABC-123"},
+            )
+            output_path = save_state(tmp, state)
+            loaded = load_state(tmp, "/dev/renamed", drive_serial="SN-ABC-123")
+
+            self.assertIn("serial_SN-ABC-123.state.json", str(output_path))
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.session_id, "sess-serial")
+
+    def test_load_state_with_serial_falls_back_to_path_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = RecoveryState(session_id="sess-path", drive_path="/dev/sdz", status="interrupted")
+            save_state(tmp, state)
+
+            loaded = load_state(tmp, "/dev/sdz", drive_serial="SN-NOT-PRESENT")
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.session_id, "sess-path")
+
 
 class TestRecoveryPolicy(unittest.TestCase):
     def test_should_offer_resume_default_policy_blocks_failed(self):
