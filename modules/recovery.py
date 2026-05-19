@@ -34,16 +34,31 @@ def _parse_utc_iso(value: str) -> datetime | None:
         return None
 
 
-def _sanitize_drive_path(drive_path: str) -> str:
-    """Create a stable filename-safe token from a drive path."""
-    token = drive_path.strip().replace("/", "_")
+def _sanitize_token(value: str) -> str:
+    """Create a stable filename-safe token from an identifier."""
+    token = value.strip().replace("/", "_").replace(" ", "_")
     return token.strip("_") or "unknown_drive"
 
 
-def state_file_path(state_dir: str | Path, drive_path: str) -> Path:
-    """Resolve checkpoint state file path for a given drive."""
+def recovery_key(drive_path: str, drive_serial: str | None = None) -> str:
+    """Return stable key for recovery state identity.
+
+    Serial number is preferred because device paths can change across boots.
+    """
+    serial = (drive_serial or "").strip()
+    if serial:
+        return f"serial_{_sanitize_token(serial)}"
+    return f"path_{_sanitize_token(drive_path)}"
+
+
+def state_file_path(
+    state_dir: str | Path,
+    drive_path: str,
+    drive_serial: str | None = None,
+) -> Path:
+    """Resolve checkpoint state file path for a given drive identity."""
     base = Path(state_dir)
-    filename = f"{_sanitize_drive_path(drive_path)}.state.json"
+    filename = f"{recovery_key(drive_path, drive_serial=drive_serial)}.state.json"
     return base / filename
 
 
@@ -188,7 +203,10 @@ def save_state(state_dir: str | Path, state: RecoveryState) -> Path:
     if not state.drive_path:
         raise ValueError("RecoveryState.drive_path is required to persist state")
 
-    output_path = state_file_path(state_dir, state.drive_path)
+    drive_serial = None
+    if isinstance(state.metadata, dict):
+        drive_serial = state.metadata.get("drive_serial")
+    output_path = state_file_path(state_dir, state.drive_path, drive_serial=drive_serial)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     state.touch()
@@ -204,10 +222,19 @@ def save_state(state_dir: str | Path, state: RecoveryState) -> Path:
     return output_path
 
 
-def load_state(state_dir: str | Path, drive_path: str) -> RecoveryState | None:
+def load_state(
+    state_dir: str | Path,
+    drive_path: str,
+    drive_serial: str | None = None,
+) -> RecoveryState | None:
     """Load persisted state for a drive. Returns None when missing/corrupt."""
-    input_path = state_file_path(state_dir, drive_path)
-    if not input_path.exists():
+    candidate_paths: list[Path] = []
+    if drive_serial:
+        candidate_paths.append(state_file_path(state_dir, drive_path, drive_serial=drive_serial))
+    candidate_paths.append(state_file_path(state_dir, drive_path))
+
+    input_path = next((path for path in candidate_paths if path.exists()), None)
+    if input_path is None:
         return None
 
     try:
@@ -222,14 +249,23 @@ def load_state(state_dir: str | Path, drive_path: str) -> RecoveryState | None:
     return RecoveryState.from_dict(data)
 
 
-def clear_state(state_dir: str | Path, drive_path: str) -> bool:
-    """Delete persisted state for a drive. Returns True when deleted."""
-    target = state_file_path(state_dir, drive_path)
-    if not target.exists():
-        return False
+def clear_state(
+    state_dir: str | Path,
+    drive_path: str,
+    drive_serial: str | None = None,
+) -> bool:
+    """Delete persisted state for a drive. Returns True when at least one file is deleted."""
+    targets = [state_file_path(state_dir, drive_path)]
+    if drive_serial:
+        targets.append(state_file_path(state_dir, drive_path, drive_serial=drive_serial))
 
-    target.unlink(missing_ok=True)
-    return True
+    deleted_any = False
+    for target in targets:
+        if target.exists():
+            target.unlink(missing_ok=True)
+            deleted_any = True
+
+    return deleted_any
 
 
 def list_incomplete_states(state_dir: str | Path) -> list[RecoveryState]:
