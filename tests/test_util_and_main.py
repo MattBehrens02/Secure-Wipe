@@ -110,6 +110,169 @@ class TestUtilitiesAndMain(unittest.TestCase):
         self.assertEqual(mock_engine_cls.call_count, 2)
         self.assertEqual(engine_instance.verify_with_config.call_count, 2)
 
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[2, -1])
+    @patch("main.recovery.release_lock")
+    @patch("main.recovery.acquire_lock", return_value=(True, None))
+    @patch("main.recovery.should_offer_resume", return_value=True)
+    @patch("main.recovery.list_incomplete_states")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("main.smartctl.is_smartctl_available", return_value=True)
+    @patch("main.dir_check.ensure_runtime_directories")
+    @patch("main.drive_detection.run")
+    @patch("main.reporting.save_wipe_report", return_value=("/tmp/report.json", "/tmp/report.txt"))
+    @patch("main.reporting.generate_wipe_report", return_value=SimpleNamespace())
+    @patch("main.wipe_engine.WipeEngine")
+    def test_main_restart_pending_jobs_uses_recovery_state_drive(
+        self,
+        mock_engine_cls,
+        _mock_generate_report,
+        _mock_save_report,
+        mock_detect,
+        _mock_dirs,
+        _mock_smartctl,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_list_states,
+        _mock_should_offer_resume,
+        mock_acquire_lock,
+        mock_release_lock,
+        mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="test-operator"),
+            paths=SimpleNamespace(reports_dir="/tmp", state_dir="/tmp/state"),
+            verification=SimpleNamespace(enabled=True),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+
+        mock_ui = Mock()
+        mock_ui.prompt_choice.return_value = "Resume /dev/sda"
+        mock_ui_from_config.return_value = mock_ui
+
+        pending_state = SimpleNamespace(
+            drive_path="/dev/sda",
+            status="interrupted",
+            current_step="open_encrypted_container",
+            updated_at="2026-05-19T10:00:00+00:00",
+            metadata={"drive_is_hdd": False},
+        )
+        mock_list_states.return_value = [pending_state]
+
+        engine_instance = Mock()
+        engine_instance.verify_with_config.return_value = SimpleNamespace(
+            status="dry_run",
+            checks_failed=[],
+            checks_passed=["luks_header_destroyed"],
+            verification_errors=[],
+        )
+        engine_instance.execute_with_recovery.return_value = SimpleNamespace(status="dry_run")
+        mock_engine_cls.return_value = engine_instance
+
+        rc = main.main(interactive=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_menu_run.call_count, 2)
+        mock_detect.assert_not_called()
+        self.assertEqual(mock_engine_cls.call_count, 1)
+        self.assertEqual(getattr(mock_engine_cls.call_args.args[0], "path", None), "/dev/sda")
+        mock_release_lock.assert_called_once_with("/tmp/state/wipe.lock")
+
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[2, -1])
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("main.recovery.list_incomplete_states", return_value=[])
+    def test_restart_returns_to_menu_when_no_pending_jobs(
+        self,
+        _mock_list_states,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            paths=SimpleNamespace(state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock()
+
+        rc = main.main(interactive=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_menu_run.call_count, 2)
+
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("main.smartctl.is_smartctl_available", return_value=True)
+    @patch("main.dir_check.ensure_runtime_directories")
+    @patch("main.recovery.acquire_lock", return_value=(True, None))
+    @patch("main.recovery.release_lock")
+    @patch("main.recovery.should_offer_resume", return_value=True)
+    @patch("main.recovery.list_incomplete_states")
+    @patch("main.drive_detection.run", return_value=[])
+    def test_main_warns_when_starting_with_pending_states(
+        self,
+        mock_detect,
+        mock_list_states,
+        _mock_should_offer_resume,
+        mock_release_lock,
+        mock_acquire_lock,
+        _mock_dirs,
+        _mock_smartctl,
+        mock_ui_from_config,
+        mock_load_config,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            paths=SimpleNamespace(state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+            reporting=SimpleNamespace(detail_level="verbose"),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock()
+        mock_list_states.return_value = [
+            SimpleNamespace(
+                drive_path="/dev/sda",
+                status="interrupted",
+                current_step="open_encrypted_container",
+                updated_at="2026-05-19T10:00:00+00:00",
+                metadata={"drive_is_hdd": False},
+            )
+        ]
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main.main()
+
+        self.assertEqual(rc, 1)
+        self.assertIn("Warning: 1 pending job(s) exist.", buf.getvalue())
+        mock_detect.assert_called_once()
+        mock_acquire_lock.assert_called_once()
+        mock_release_lock.assert_called_once()
+
     def test_placeholder_modules_import(self):
         import modules.recovery  # noqa: F401
         import modules.uploader  # noqa: F401
