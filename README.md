@@ -199,8 +199,13 @@ Before moving from `dev` toward release hardening, confirm:
 - [x] Dry-run default enabled in `configuration.toml`
 - [x] Upload default disabled until repository target is configured
 - [ ] Controlled non-dry-run execution validated on approved test hardware
-- [ ] Operator runbook finalized for incident handling and retries
-- [ ] Hard-failure playbook documented (power loss, lock contention, corrupted state, upload outages)
+- [x] Operator runbook finalized for incident handling and retries
+- [x] Hard-failure playbook documented (power loss, lock contention, corrupted state, upload outages)
+
+## Operational Documentation
+
+- Operator runbook: `docs/operator-runbook.md`
+- Hard-failure playbook: `docs/hard-failure-playbook.md`
 
 ## Git Workflow
 
@@ -323,6 +328,7 @@ git config --global user.email "your_email@example.com"
 - Upload workflow currently targets a single Git remote and branch per configuration.
 - No GUI is provided; operation is terminal-driven by design.
 - Parallel drive wiping is intentionally out of scope.
+- Dedicated operator maintenance commands for stale lock/state cleanup are not yet implemented.
 
 ## Troubleshooting
 
