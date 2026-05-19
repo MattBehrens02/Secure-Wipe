@@ -4,38 +4,37 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 
 ## Project Status
 
-**Phase:** Foundation - Infrastructure Complete, Implementation Starting
+**Phase:** Pre-Hardening - Core Workflow Implemented
 
 | Phase | Status | Est. Hours |
 |-------|--------|-----------|
 | Docker & Project Setup | ✅ Complete | ~4h |
-| Phase 1: Drive Detection + CLI | ⏸️ Paused | ~15h |
-| Phase 2: Wipe Engine | 🔄 In Progress | ~35h |
-| Phase 3: Verification & Reporting | ⏳ Pending | ~25h |
-| Phase 4: Hardening & Testing | ⏳ Pending | ~15h |
+| Phase 1: Drive Detection + CLI | ✅ Complete | ~15h |
+| Phase 2: Wipe Engine + Recovery | ✅ Complete | ~35h |
+| Phase 3: Verification + Reporting + Upload | ✅ Complete | ~25h |
+| Phase 4: Hardening & Validation | 🔄 Next Focus | ~15h |
 
 **Total Estimated Timeline:** ~100 development hours
 
 ## What's Done
 
-- ✅ Project skeleton created
-- ✅ Docker development environment configured (Debian 12, no venv)
-- ✅ docker-compose.yml configured for seamless development
-- ✅ .dockerignore created for clean builds
-- ✅ requirements.txt with core dependencies
-- ✅ Git workflow setup (main → dev → feature branches)
-- ✅ SSH authentication to GitHub configured
-- ✅ modules/ directory structure reorganized
-- ✅ main.py skeleton with module imports
-- ✅ Empty module files created (ready to implement)
+- ✅ Configuration loading and validation (`configuration.toml` + `modules/config.py`)
+- ✅ Drive detection, normalization, safety filtering, and user confirmation flow
+- ✅ Wipe engine orchestration (LUKS2 workflow, scrub, signature cleanup, HDD final zero pass)
+- ✅ Recovery checkpointing, resume logic, stale lock handling, and state lifecycle
+- ✅ Verification checks (LUKS header, residual signatures, random sector sampling, SMART snapshot)
+- ✅ Report generation (JSON + text) with detail-level controls
+- ✅ Git-based upload queue with retry/backoff and local retention semantics
+- ✅ Daily file logging and centralized terminal command runner utilities
+- ✅ Comprehensive unit test suite (`unittest`, mocked destructive operations)
 
 ## What's Next
 
-**Immediate (Phase 1 - Starting Now):**
-1. `modules/config.py` — Configuration management
-2. `modules/drive_detection.py` — Hardware enumeration
-3. `main.py` — CLI orchestration and menu system
-4. Hardware validation testing
+**Immediate (Phase 4 - Hardening):**
+1. Harden error taxonomy and user-facing failure messages across modules
+2. Expand integration and fault-injection scenarios (timeouts, partial failures, network issues)
+3. Perform controlled non-dry-run validation on approved hardware
+4. Finalize operator documentation and known-limits documentation
 
 ## Project Overview
 
@@ -93,7 +92,8 @@ Edit Python files in VS Code on Windows — changes sync instantly to container:
 ```bash
 # In container, from /app
 python3 main.py                     # Run the application
-python3 -m pytest tests/            # Run tests (once created)
+python3 -m unittest discover -s tests -v   # Run the full unit test suite
+python3 run_tests.py                        # Alternate test runner
 python3 -c "from modules import config"  # Test imports
 ```
 
@@ -143,7 +143,7 @@ securewipe/
 
 ## Development Phases
 
-### Phase 1: Foundation (~15h) — STARTING NOW
+### Phase 1: Foundation (~15h) — COMPLETE
 **Goal:** Drive detection + CLI infrastructure
 
 **Build Order:**
@@ -156,8 +156,8 @@ securewipe/
 - CLI menu for safe drive selection
 - Test on real hardware validates approach
 
-### Phase 2: Wipe Engine (~35h)
-**Goal:** Functional cryptographic wipe
+### Phase 2: Wipe Engine + Recovery (~35h) — COMPLETE
+**Goal:** Functional cryptographic wipe with resumable state
 
 **Build Order:**
 1. `modules/wipe_engine.py` — LUKS2 orchestration, HDD overwrite
@@ -168,7 +168,7 @@ securewipe/
 - State persistence for incomplete operations
 - Resumption logic
 
-### Phase 3: Verification & Reporting (~25h)
+### Phase 3: Verification, Reporting, and Upload (~25h) — COMPLETE
 **Goal:** Post-wipe validation & audit trail
 
 **Build Order:**
@@ -181,13 +181,26 @@ securewipe/
 - Structured audit reports
 - Git-based operational traceability
 
-### Phase 4: Hardening (~15h)
+### Phase 4: Hardening (~15h) — IN PROGRESS
 **Goal:** Error handling, edge cases, stability
 
 - Comprehensive error handling (all modules)
 - Interruption recovery workflows
 - Edge case testing
-- Documentation finalization
+- Documentation finalization and runbook polish
+
+## Hardening Readiness Checklist
+
+Before moving from `dev` toward release hardening, confirm:
+
+- [x] Core modules implemented (`config`, `drive_detection`, `wipe_engine`, `recovery`, `verification`, `reporting`, `uploader`)
+- [x] End-to-end orchestration in `main.py`
+- [x] Unit test suite passing locally (`python3 -m unittest discover -s tests -v`)
+- [x] Dry-run default enabled in `configuration.toml`
+- [x] Upload default disabled until repository target is configured
+- [ ] Controlled non-dry-run execution validated on approved test hardware
+- [ ] Operator runbook finalized for incident handling and retries
+- [ ] Hard-failure playbook documented (power loss, lock contention, corrupted state, upload outages)
 
 ## Git Workflow
 
@@ -306,20 +319,23 @@ git config --global user.email "your_email@example.com"
 
 ## Known Limitations
 
-(To be updated as development progresses)
+- Real destructive validation is environment-dependent and should only be executed on approved test media.
+- Upload workflow currently targets a single Git remote and branch per configuration.
+- No GUI is provided; operation is terminal-driven by design.
+- Parallel drive wiping is intentionally out of scope.
 
 ## Troubleshooting
 
 ### Docker build fails
 ```bash
-docker-compose down
+docker compose down
 docker system prune
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 ### Container won't start
 ```bash
-docker-compose logs securewipe
+docker compose logs securewipe
 ```
 
 ### SSH access issues
