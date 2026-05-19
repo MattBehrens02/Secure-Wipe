@@ -1,0 +1,50 @@
+test_ensure_runtime_directories_creates_missing_dirs (tests.test_util_and_main.TestUtilitiesAndMain.test_ensure_runtime_directories_creates_missing_dirs) ... ok
+test_header_prints_banner (tests.test_util_and_main.TestUtilitiesAndMain.test_header_prints_banner) ... ok
+test_main_restart_pending_jobs_uses_recovery_state_drive (tests.test_util_and_main.TestUtilitiesAndMain.test_main_restart_pending_jobs_uses_recovery_state_drive) ... ok
+test_main_returns_one_when_no_drives (tests.test_util_and_main.TestUtilitiesAndMain.test_main_returns_one_when_no_drives) ... /home/mbehrens/projects/Secure-Wipe/modules/app_logging.py:34: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/mbehrens/projects/Secure-Wipe/logs/2026-05-19.log' mode='a' encoding='utf-8'>
+  logger.handlers.clear()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_main_success_flow_runs_engine_for_each_drive (tests.test_util_and_main.TestUtilitiesAndMain.test_main_success_flow_runs_engine_for_each_drive) ... ok
+test_main_warns_when_starting_with_pending_states (tests.test_util_and_main.TestUtilitiesAndMain.test_main_warns_when_starting_with_pending_states) ... ok
+test_placeholder_modules_import (tests.test_util_and_main.TestUtilitiesAndMain.test_placeholder_modules_import) ... ok
+test_restart_returns_to_menu_when_no_pending_jobs (tests.test_util_and_main.TestUtilitiesAndMain.test_restart_returns_to_menu_when_no_pending_jobs) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.013s
+
+OK
+Created missing directory: /tmp/tmp80pbymkc/logs
+Created missing directory: /tmp/tmp80pbymkc/reports
+Created missing directory: /tmp/tmp80pbymkc/state
+Created missing directory: /tmp/tmp80pbymkc/tmp
+
+Pending jobs:
+  Drive: /dev/sda, Status: interrupted, Current step: open_encrypted_container, Updated: 2026-05-19T10:00:00+00:00
+Loaded configuration: environment=test, dry_run=True
+Wipe result for /dev/sda: dry_run
+Verification result for /dev/sda: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+Loaded configuration: environment=test, dry_run=True
+No drives detected.
+Loaded configuration: environment=test, dry_run=True
+Wipe result for /dev/sda: dry_run
+Verification result for /dev/sda: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+Wipe result for /dev/sdb: dry_run
+Verification result for /dev/sdb: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+No pending jobs are available to restart.
+Exiting...

@@ -1,13 +1,96 @@
 import sys
 import tomllib
+from types import SimpleNamespace
 
-from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check
+from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check, menu_shell
 from modules import smartctl
 from modules import app_logging
 from modules.terminal import TerminalUI
 
 
-def main() -> int:
+def _recovery_settings(app_config):
+	recovery_cfg = getattr(app_config, "recovery", object())
+	state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
+	lock_file_path = getattr(recovery_cfg, "lock_file_path", "./state/wipe.lock")
+	lock_stale_seconds = int(getattr(recovery_cfg, "lock_stale_seconds", 7200))
+	resume_max_age_seconds = int(getattr(recovery_cfg, "resume_state_max_age_seconds", 86400))
+	allow_failed_resume = bool(getattr(recovery_cfg, "allow_failed_resume", False))
+	return state_dir, lock_file_path, lock_stale_seconds, resume_max_age_seconds, allow_failed_resume
+
+
+def _clear_incomplete_states(state_dir: str) -> int:
+	incomplete_states = recovery.list_incomplete_states(state_dir)
+	for state in incomplete_states:
+		recovery.clear_state(state_dir, state.drive_path)
+	return len(incomplete_states)
+
+
+def _pending_states(app_config) -> list[recovery.RecoveryState]:
+	state_dir, _, _, resume_max_age_seconds, allow_failed_resume = _recovery_settings(app_config)
+	incomplete_states = recovery.list_incomplete_states(state_dir)
+	return [
+		state
+		for state in incomplete_states
+		if recovery.should_offer_resume(
+			state,
+			max_age_seconds=resume_max_age_seconds,
+			allow_failed_resume=allow_failed_resume,
+		)
+	]
+
+
+def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] | None:
+	resume_candidates = _pending_states(app_config)
+
+	if not resume_candidates:
+		print("No pending jobs are available to restart.")
+		app_logging.log_info("Restart pending jobs requested but no resumable states were found")
+		return None
+
+	resume_candidates_sorted = sorted(
+		resume_candidates,
+		key=lambda state: state.updated_at,
+		reverse=True,
+	)
+
+	print("\nPending jobs:")
+	for state in resume_candidates_sorted:
+		print(
+			f"  Drive: {state.drive_path}, Status: {state.status}, "
+			f"Current step: {state.current_step}, Updated: {state.updated_at}"
+		)
+
+	choices = [f"Resume {state.drive_path}" for state in resume_candidates_sorted] + ["Return to main menu"]
+	choice = terminal_ui.prompt_choice("Select a pending job to restart:", choices, default=0)
+
+	if choice == "Return to main menu":
+		app_logging.log_info("User returned to main menu from pending restart list")
+		return None
+
+	selected_index = choices.index(choice)
+	selected_state = resume_candidates_sorted[selected_index]
+	metadata = selected_state.metadata if isinstance(selected_state.metadata, dict) else {}
+	selected_drive = SimpleNamespace(
+		path=selected_state.drive_path,
+		name=metadata.get("drive_name", ""),
+		model=metadata.get("drive_model", ""),
+		vendor=metadata.get("drive_vendor", ""),
+		serial=metadata.get("drive_serial", ""),
+		size=metadata.get("drive_size", ""),
+		type=metadata.get("drive_type", "disk"),
+		mountpoints=list(metadata.get("drive_mountpoints", [])),
+		removable=bool(metadata.get("drive_removable", False)),
+		transport=metadata.get("drive_transport", ""),
+		rotational=metadata.get("drive_rotational"),
+		media_type=metadata.get("drive_media_type", "Unknown"),
+		is_hdd=bool(metadata.get("drive_is_hdd", False)),
+		smart_data=metadata.get("drive_smart_data"),
+	)
+	app_logging.log_info(f"User chose to restart wipe on {selected_drive.path}")
+	return [selected_drive]
+
+
+def main(interactive: bool = False) -> int:
 	try:
 		app_config = config.load_config()
 	except (ValueError, tomllib.TOMLDecodeError, OSError) as exc:
@@ -15,189 +98,182 @@ def main() -> int:
 		return 1
 
 	terminal_ui = TerminalUI.from_config(app_config)
-
-	if app_config.drive_detection.collect_smart_info and not smartctl.is_smartctl_available():
-		print(
-			"Warning: SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable.",
-			file=sys.stderr,
-		)
-		app_logging.log_error("SMART collection enabled but smartctl is unavailable")
+	interactive_menu = interactive and sys.stdin.isatty()
+	state_dir, lock_file_path, lock_stale_seconds, _resume_max_age_seconds, _allow_failed_resume = _recovery_settings(app_config)
 
 	terminal_ui.enter_alt_screen()
-	dir_check.ensure_runtime_directories(app_config)
-	app_logging.setup_logging(app_config)
+	try:
+		while True:
+			action_success = True
+			selected_drives: list[object] = []
 
-	recovery_cfg = getattr(app_config, "recovery", object())
-	lock_file_path = getattr(recovery_cfg, "lock_file_path", "./state/wipe.lock")
-	lock_stale_seconds = int(getattr(recovery_cfg, "lock_stale_seconds", 7200))
-	resume_max_age_seconds = int(getattr(recovery_cfg, "resume_state_max_age_seconds", 86400))
-	allow_failed_resume = bool(getattr(recovery_cfg, "allow_failed_resume", False))
-	state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
+			while True:
+				menu_choice = 1
+				if interactive_menu:
+					menu_choice = menu_shell.run()
 
-	lock_acquired, lock_error = recovery.acquire_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
-	if not lock_acquired:
-		print(f"Recovery lock error: {lock_error}", file=sys.stderr)
-		app_logging.log_error(f"Recovery lock acquisition failed path={lock_file_path} error={lock_error}")
-		terminal_ui.exit_alt_screen()
-		return 1
+				if menu_choice == -1:
+					print("Exiting...")
+					return 0
+				if menu_choice not in {1, 2}:
+					print("Invalid menu selection.")
+					return 1
 
-	try: 
-		incomplete_states = recovery.list_incomplete_states(state_dir)
-		resume_candidates = [
-			state
-			for state in incomplete_states
-			if recovery.should_offer_resume(
-				state,
-				max_age_seconds=resume_max_age_seconds,
-				allow_failed_resume=allow_failed_resume,
-			)
-		]
+				if menu_choice == 1:
+					pending_states = _pending_states(app_config)
+					if pending_states:
+						print(
+							f"Warning: {len(pending_states)} pending job(s) exist. "
+							"Starting a fresh job will clear those recovery states."
+						)
+						app_logging.log_info(
+							f"Fresh start requested with {len(pending_states)} pending recovery state(s) present"
+						)
+					cleared_states = _clear_incomplete_states(state_dir)
+					if cleared_states:
+						app_logging.log_info(f"User chose fresh start; cleared {cleared_states} incomplete state(s)")
+					break
 
-		selected_drives = []
-		if resume_candidates:
-			# Sort by updated_at descending (most recent first)
-			resume_candidates_sorted = sorted(
-				resume_candidates,
-				key=lambda s: s.updated_at,
-				reverse=True
-			)
-			
-			# Format candidate summary for user
-			candidate_summary = "\n".join([
-				f"  Drive: {s.drive_path}, Status: {s.status}, "
-				f"Current step: {s.current_step}, Updated: {s.updated_at}"
-				for s in resume_candidates_sorted
-			])
-			
-			print(f"\nFound {len(resume_candidates)} resumable recovery state(s):")
-			print(candidate_summary)
-			
-			choice = terminal_ui.prompt_choice(
-				"What would you like to do?",
-				["Resume oldest incomplete wipe", "Start fresh wipe (clear incomplete states)"],
-				default=0
-			)
-			
-			if choice == "Resume oldest incomplete wipe":
-				# Use the most recent candidate for resume
-				selected_drives = [resume_candidates_sorted[0].drive_path]
-				app_logging.log_info(f"User chose to resume wipe on {selected_drives[0]}")
-			else:
-				# Clear all resumable states and proceed with fresh start
-				for state in resume_candidates:
-					recovery.clear_state(state_dir, state.drive_path)
-				app_logging.log_info(f"User chose to start fresh; cleared {len(resume_candidates)} incomplete states")
-		
-		print(
-			"Loaded configuration: "
-			f"environment={app_config.runtime.environment}, "
-			f"dry_run={app_config.runtime.dry_run}"
-		)
-		app_logging.log_info(
-			"Application start "
-			f"environment={app_config.runtime.environment} dry_run={app_config.runtime.dry_run}"
-		)
+				selected_drives = _select_restart_drive(app_config, terminal_ui) or []
+				if not selected_drives:
+					if interactive_menu:
+						continue
+					return 0
+				break
 
-		# If no drives selected via resume, run drive detection
-		if not selected_drives:
-			selected_drives = drive_detection.run(app_config, terminal_ui)
-		
-		if selected_drives == []:
-			print("No drives detected.")
-			app_logging.log_error("No drives detected after selection flow")
-			return 1
-
-		# if app_config.reporting.reports_enabled:
-		# 	report_path = reporting.generate_detection_json_report(app_config, selected_drives)
-		# 	print(f"Detection report written to: {report_path}")
-
-		for drive in selected_drives:
-			engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
-			result = engine.execute_with_recovery(app_config)
-			verification_result = None
-			print(f"Wipe result for {drive.path}: {result.status}")
-			if getattr(result, "recovery_resumed", False):
-				resume_attempts = getattr(result, "recovery_resume_attempts", 0)
-				resume_source = getattr(result, "recovery_resume_source_status", "unknown")
+			if app_config.drive_detection.collect_smart_info and not smartctl.is_smartctl_available():
 				print(
-					f"Recovery state for {drive.path}: resumed from {resume_source} "
-					f"(attempt {resume_attempts})"
+					"Warning: SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable.",
+					file=sys.stderr,
 				)
-				app_logging.log_info(
-					f"Recovery resumed drive={drive.path} source_status={resume_source} attempts={resume_attempts}"
-				)
-			if result.status == "failed":
-				failed_step = getattr(result, "failed_step", None)
-				error_message = getattr(result, "error_message", None)
-				app_logging.log_error(
-					f"Wipe failed drive={drive.path} step={failed_step} error={error_message}"
-				)
-			else:
-				started_at = getattr(result, "started_at", None)
-				finished_at = getattr(result, "finished_at", None)
-				app_logging.log_info(
-					f"Wipe completed drive={drive.path} status={result.status} "
-					f"started_at={started_at} finished_at={finished_at}"
-				)
-				verification_result = engine.verify_with_config(app_config)
-				result.verification_result = verification_result
-				print(f"Verification result for {drive.path}: {verification_result.status}")
-				if verification_result.status == "failed":
-					app_logging.log_error(
-						f"Verification failed drive={drive.path} failed_checks={verification_result.checks_failed}"
-					)
-				else:
-					app_logging.log_info(
-						f"Verification completed drive={drive.path} status={verification_result.status}"
-					)
-			
-			# Print duration summary if available
-			duration_summary = getattr(result, "format_duration_summary", lambda: "")()
-			if duration_summary:
-				print(duration_summary)
-			
-			# Generate and save wipe report
-			try:
-				report = reporting.generate_wipe_report(
-					drive,
-					result,
-					app_config,
-					verification_result=verification_result,
-				)
-				reports_dir = getattr(app_config.paths, "reports_dir", "./reports")
-				detail_level = getattr(app_config.reporting, "detail_level", "verbose")
-				json_path, text_path = reporting.save_wipe_report(
-					report,
-					reports_dir,
-					detail_level=detail_level,
-				)
-				print(f"\nWipe report saved:")
-				print(f"  JSON: {json_path}")
-				print(f"  Text: {text_path}")
-				app_logging.log_info(f"Wipe report saved drive={drive.path} json={json_path} text={text_path}")
-				
-				# Attempt to upload reports
-				upload_result = uploader.upload_reports(
-					json_path,
-					text_path,
-					app_config,
-					dry_run=app_config.runtime.dry_run,
-				)
-				if upload_result:
-					print("Report upload: SUCCESS")
-					app_logging.log_info(f"Report upload succeeded drive={drive.path}")
-				else:
-					print("Report upload: FAILED (reports retained locally for retry)")
-					app_logging.log_error(f"Report upload failed drive={drive.path}; reports retained locally")
-			except Exception as report_error:
-				app_logging.log_error(f"Failed to save wipe report: {report_error}")
+				app_logging.log_error("SMART collection enabled but smartctl is unavailable")
 
+			dir_check.ensure_runtime_directories(app_config)
+			app_logging.setup_logging(app_config)
+
+			lock_acquired, lock_error = recovery.acquire_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
+			if not lock_acquired:
+				print(f"Recovery lock error: {lock_error}", file=sys.stderr)
+				app_logging.log_error(f"Recovery lock acquisition failed path={lock_file_path} error={lock_error}")
+				action_success = False
+				if not interactive_menu:
+					return 1
+				print("Action result: FAILED. Returning to main menu...")
+				continue
+
+			try:
+				print(
+					"Loaded configuration: "
+					f"environment={app_config.runtime.environment}, "
+					f"dry_run={app_config.runtime.dry_run}"
+				)
+				app_logging.log_info(
+					"Application start "
+					f"environment={app_config.runtime.environment} dry_run={app_config.runtime.dry_run}"
+				)
+
+				if not selected_drives:
+					selected_drives = drive_detection.run(app_config, terminal_ui)
+
+				if selected_drives == []:
+					print("No drives detected.")
+					app_logging.log_error("No drives detected after selection flow")
+					action_success = False
+
+				for drive in selected_drives:
+					engine = wipe_engine.WipeEngine(drive, app_config.runtime.dry_run)
+					result = engine.execute_with_recovery(app_config)
+					verification_result = None
+					print(f"Wipe result for {drive.path}: {result.status}")
+					if getattr(result, "recovery_resumed", False):
+						resume_attempts = getattr(result, "recovery_resume_attempts", 0)
+						resume_source = getattr(result, "recovery_resume_source_status", "unknown")
+						print(
+							f"Recovery state for {drive.path}: resumed from {resume_source} "
+							f"(attempt {resume_attempts})"
+						)
+						app_logging.log_info(
+							f"Recovery resumed drive={drive.path} source_status={resume_source} attempts={resume_attempts}"
+						)
+					if result.status == "failed":
+						action_success = False
+						failed_step = getattr(result, "failed_step", None)
+						error_message = getattr(result, "error_message", None)
+						app_logging.log_error(
+							f"Wipe failed drive={drive.path} step={failed_step} error={error_message}"
+						)
+					else:
+						started_at = getattr(result, "started_at", None)
+						finished_at = getattr(result, "finished_at", None)
+						app_logging.log_info(
+							f"Wipe completed drive={drive.path} status={result.status} "
+							f"started_at={started_at} finished_at={finished_at}"
+						)
+						verification_result = engine.verify_with_config(app_config)
+						result.verification_result = verification_result
+						print(f"Verification result for {drive.path}: {verification_result.status}")
+						if verification_result.status == "failed":
+							action_success = False
+							app_logging.log_error(
+								f"Verification failed drive={drive.path} failed_checks={verification_result.checks_failed}"
+							)
+						else:
+							app_logging.log_info(
+								f"Verification completed drive={drive.path} status={verification_result.status}"
+							)
+
+					duration_summary = getattr(result, "format_duration_summary", lambda: "")()
+					if duration_summary:
+						print(duration_summary)
+
+					try:
+						report = reporting.generate_wipe_report(
+							drive,
+							result,
+							app_config,
+							verification_result=verification_result,
+						)
+						reports_dir = getattr(app_config.paths, "reports_dir", "./reports")
+						detail_level = getattr(app_config.reporting, "detail_level", "verbose")
+						json_path, text_path = reporting.save_wipe_report(
+							report,
+							reports_dir,
+							detail_level=detail_level,
+						)
+						print("\nWipe report saved:")
+						print(f"  JSON: {json_path}")
+						print(f"  Text: {text_path}")
+						app_logging.log_info(f"Wipe report saved drive={drive.path} json={json_path} text={text_path}")
+
+						upload_result = uploader.upload_reports(
+							json_path,
+							text_path,
+							app_config,
+							dry_run=app_config.runtime.dry_run,
+						)
+						if upload_result:
+							print("Report upload: SUCCESS")
+							app_logging.log_info(f"Report upload succeeded drive={drive.path}")
+						else:
+							action_success = False
+							print("Report upload: FAILED (reports retained locally for retry)")
+							app_logging.log_error(f"Report upload failed drive={drive.path}; reports retained locally")
+					except Exception as report_error:
+						action_success = False
+						app_logging.log_error(f"Failed to save wipe report: {report_error}")
+			finally:
+				recovery.release_lock(lock_file_path)
+
+			if not interactive_menu:
+				return 0 if action_success else 1
+
+			status_text = "SUCCESS" if action_success else "FAILED"
+			print(f"\nAction result: {status_text}. Returning to main menu...")
 	finally:
-		recovery.release_lock(lock_file_path)
 		terminal_ui.exit_alt_screen()
 
 	return 0
 
 
 if __name__ == "__main__":
-	raise SystemExit(main())
+	raise SystemExit(main(interactive=True))
