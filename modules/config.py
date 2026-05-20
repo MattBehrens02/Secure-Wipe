@@ -294,3 +294,87 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
 
 
     return config
+
+
+def _format_toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, list):
+        return "[" + ", ".join(_format_toml_value(item) for item in value) + "]"
+    raise ValueError(f"Unsupported TOML value type: {type(value)!r}")
+
+
+def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
+    """Build the user-editable TOML payload from AppConfig.
+
+    Only values from the curated, whitelisted subset are persisted.
+    """
+    return {
+        "runtime": {
+            "environment": config.runtime.environment,
+            "dry_run": config.runtime.dry_run,
+        },
+        "safety": {
+            "removable_drive_mode": config.safety.removable_drive_mode,
+            "mount_handling_mode": config.safety.mount_handling_mode,
+            "confirmation_steps": config.safety.confirmation_steps,
+        },
+        "drive_detection": {
+            "collect_smart_info": config.drive_detection.collect_smart_info,
+        },
+        "recovery": {
+            "checkpoint_interval_seconds": config.recovery.checkpoint_interval_seconds,
+            "max_resume_attempts": config.recovery.max_resume_attempts,
+            "lock_file_path": config.recovery.lock_file_path,
+            "lock_stale_seconds": config.recovery.lock_stale_seconds,
+            "resume_state_max_age_seconds": config.recovery.resume_state_max_age_seconds,
+            "allow_failed_resume": config.recovery.allow_failed_resume,
+        },
+        "reporting": {
+            "formats": list(config.reporting.formats),
+            "detail_level": config.reporting.detail_level,
+        },
+        "upload": {
+            "enabled": config.upload.enabled,
+            "repo": config.upload.repo or "",
+            "branch": config.upload.branch,
+            "retry_count": config.upload.retry_count,
+        },
+        "logging": {
+            "enabled": config.logging.enabled,
+            "level": config.logging.level,
+        },
+    }
+
+
+def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None) -> Path:
+    """Persist the whitelisted user-facing configuration as TOML."""
+    target_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    payload = _user_config_payload(config)
+
+    lines: list[str] = []
+    ordered_tables = [
+        "runtime",
+        "safety",
+        "drive_detection",
+        "recovery",
+        "reporting",
+        "upload",
+        "logging",
+    ]
+
+    for table_name in ordered_tables:
+        table_data = payload[table_name]
+        lines.append(f"[{table_name}]")
+        for key, value in table_data.items():
+            lines.append(f"{key} = {_format_toml_value(value)}")
+        lines.append("")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return target_path

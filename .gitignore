@@ -36,3 +36,4 @@ venv/
 *.swo
 *~
 .DS_Store
+*.code-workspace

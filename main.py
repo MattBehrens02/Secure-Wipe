@@ -125,6 +125,54 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 			input("Press Enter to return to report list...")
 
 
+def _configure_settings(app_config, terminal_ui: TerminalUI):
+	while True:
+		choices = [
+			f"Toggle Dry Run (currently: {'ON' if app_config.runtime.dry_run else 'OFF'})",
+			f"Toggle Upload Enabled (currently: {'ON' if app_config.upload.enabled else 'OFF'})",
+			f"Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
+			f"Toggle Logging Level (currently: {app_config.logging.level.upper()})",
+			f"Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
+			"Return to main menu",
+		]
+		choice = terminal_ui.prompt_choice("Configuration menu:", choices, default=0)
+
+		if choice == "Return to main menu":
+			app_logging.log_info("User returned to main menu from configuration menu")
+			return app_config
+
+		if choice.startswith("Toggle Dry Run"):
+			app_config.runtime.dry_run = not app_config.runtime.dry_run
+			print(f"Dry run is now {'ON' if app_config.runtime.dry_run else 'OFF'}.")
+		elif choice.startswith("Toggle Upload Enabled"):
+			app_config.upload.enabled = not app_config.upload.enabled
+			print(f"Upload is now {'ON' if app_config.upload.enabled else 'OFF'}.")
+		elif choice.startswith("Toggle SMART Collection"):
+			app_config.drive_detection.collect_smart_info = not app_config.drive_detection.collect_smart_info
+			print(
+				"SMART collection is now "
+				f"{'ON' if app_config.drive_detection.collect_smart_info else 'OFF'}."
+			)
+		elif choice.startswith("Toggle Logging Level"):
+			app_config.logging.level = "errors" if app_config.logging.level == "info" else "info"
+			print(f"Logging level is now {app_config.logging.level.upper()}.")
+		elif choice.startswith("Cycle Report Detail Level"):
+			detail_levels = ["minimal", "standard", "verbose"]
+			current = app_config.reporting.detail_level
+			if current not in detail_levels:
+				current = "verbose"
+			next_index = (detail_levels.index(current) + 1) % len(detail_levels)
+			app_config.reporting.detail_level = detail_levels[next_index]
+			print(f"Report detail level is now {app_config.reporting.detail_level}.")
+
+		try:
+			config.save_user_config(app_config)
+			app_logging.log_info("Configuration updated from in-app configuration menu")
+		except OSError as exc:
+			print(f"Failed to save configuration: {exc}")
+			app_logging.log_error(f"Failed to persist configuration changes: {exc}")
+
+
 def main(interactive: bool = False) -> int:
 	try:
 		app_config = config.load_config()
@@ -150,12 +198,18 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3}:
+				if menu_choice not in {1, 2, 3, 4}:
 					print("Invalid menu selection.")
 					return 1
 
 				if menu_choice == 3:
 					_view_reports(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
+
+				if menu_choice == 4:
+					app_config = _configure_settings(app_config, terminal_ui)
 					if interactive_menu:
 						continue
 					return 0

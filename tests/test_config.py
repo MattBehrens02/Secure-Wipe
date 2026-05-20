@@ -94,6 +94,29 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.paths.project_root, str(project_root))
         self.assertEqual(cfg.paths.logs_dir, str(project_root / "logs"))
 
+    def test_save_user_config_roundtrip(self):
+        cfg = config.AppConfig()
+        cfg.runtime.environment = "test"
+        cfg.runtime.dry_run = False
+        cfg.drive_detection.collect_smart_info = False
+        cfg.reporting.detail_level = "standard"
+        cfg.upload.enabled = True
+        cfg.logging.level = "errors"
+
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml") as tmp:
+            tmp_path = tmp.name
+
+        output_path = config.save_user_config(cfg, tmp_path)
+        self.assertTrue(Path(output_path).exists())
+
+        loaded = config.load_config(tmp_path)
+        self.assertEqual(loaded.runtime.environment, "test")
+        self.assertFalse(loaded.runtime.dry_run)
+        self.assertFalse(loaded.drive_detection.collect_smart_info)
+        self.assertEqual(loaded.reporting.detail_level, "standard")
+        self.assertTrue(loaded.upload.enabled)
+        self.assertEqual(loaded.logging.level, "errors")
+
 
 if __name__ == "__main__":
     unittest.main()
