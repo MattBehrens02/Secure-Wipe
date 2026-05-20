@@ -349,6 +349,47 @@ class TestUtilitiesAndMain(unittest.TestCase):
         self.assertEqual(rc, 0)
         mock_read_report.assert_called_once()
 
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[4, -1])
+    @patch("main.config.save_user_config")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    def test_main_configuration_menu_persists_toggle_changes(
+        self,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_save_config,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            upload=SimpleNamespace(enabled=False),
+            drive_detection=SimpleNamespace(collect_smart_info=True),
+            logging=SimpleNamespace(level="info"),
+            reporting=SimpleNamespace(detail_level="verbose"),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+
+        mock_ui = Mock(interactive=True)
+        mock_ui.prompt_choice.side_effect = [
+            "Toggle Dry Run (currently: ON)",
+            "Return to main menu",
+        ]
+        mock_ui_from_config.return_value = mock_ui
+
+        rc = main.main(interactive=True)
+        self.assertEqual(rc, 0)
+        self.assertFalse(cfg.runtime.dry_run)
+        mock_save_config.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
