@@ -568,3 +568,30 @@ def generate_detection_json_report(app_config: Any, selected_drives: list[Any]) 
 	"""Build and write a basic JSON report for selected drives."""
 	report_data = build_detection_report(app_config, selected_drives)
 	return write_json_report(report_data, app_config.paths.reports_dir)
+
+
+def list_saved_reports(
+	reports_dir: str | Path = "./reports",
+	allowed_suffixes: tuple[str, ...] = (".txt", ".json"),
+) -> list[Path]:
+	"""Return report files sorted by newest first.
+
+	Only files in `allowed_suffixes` are returned.
+	"""
+	reports_path = Path(reports_dir)
+	if not reports_path.exists() or not reports_path.is_dir():
+		return []
+
+	report_paths = [
+		path
+		for path in reports_path.iterdir()
+		if path.is_file() and path.suffix.lower() in allowed_suffixes
+	]
+
+	return sorted(report_paths, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def read_saved_report(report_path: str | Path) -> str:
+	"""Read a saved report as UTF-8 text with replacement for invalid bytes."""
+	path = Path(report_path)
+	return path.read_text(encoding="utf-8", errors="replace")

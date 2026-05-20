@@ -9,6 +9,7 @@ MENU_WIDTH = 80 # The width of the menu shell, feel free to adjust as needed
 MENU_OPTIONS = [
     "Start Job",
     "Restart Pending Jobs",
+	"View Reports",
 ]
 
 def print_line():
@@ -96,7 +97,7 @@ def run():
             decided = True
             return -1
 
-        elif option in {"1", "2"}:
+        elif option in {"1", "2", "3"}:
             decided = True
             return int(option)
 

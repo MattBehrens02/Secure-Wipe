@@ -15,6 +15,8 @@ from modules.reporting import (
     _humanize_size,
     _format_duration,
     build_detection_report,
+	list_saved_reports,
+	read_saved_report,
 )
 from modules.version import AppVersion
 
@@ -332,6 +334,32 @@ class TestDetectionReporting(unittest.TestCase):
         self.cfg.reporting.detail_level = "minimal"
         data = build_detection_report(self.cfg, [self.drive])
         self.assertEqual(set(data["drives"][0].keys()), {"path", "size"})
+
+
+class TestSavedReportUtilities(unittest.TestCase):
+    def test_list_saved_reports_returns_newest_first_and_filters_suffixes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports_dir = Path(tmp)
+            older_txt = reports_dir / "older.txt"
+            newer_json = reports_dir / "newer.json"
+            ignored_file = reports_dir / "notes.log"
+
+            older_txt.write_text("old", encoding="utf-8")
+            ignored_file.write_text("ignore", encoding="utf-8")
+            newer_json.write_text("{}", encoding="utf-8")
+
+            reports = list_saved_reports(reports_dir)
+            self.assertEqual([path.name for path in reports], ["newer.json", "older.txt"])
+
+    def test_list_saved_reports_returns_empty_when_directory_missing(self):
+        reports = list_saved_reports("/tmp/definitely_missing_securewipe_reports")
+        self.assertEqual(reports, [])
+
+    def test_read_saved_report_reads_utf8_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "report.txt"
+            report_path.write_text("hello world", encoding="utf-8")
+            self.assertEqual(read_saved_report(report_path), "hello world")
 
 
 if __name__ == "__main__":

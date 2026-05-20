@@ -93,6 +93,38 @@ def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] |
 	return [selected_drive]
 
 
+def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
+	reports_dir = getattr(getattr(app_config, "paths", object()), "reports_dir", "./reports")
+	report_paths = reporting.list_saved_reports(reports_dir)
+
+	if not report_paths:
+		print(f"No reports found in {reports_dir}.")
+		app_logging.log_info(f"Report viewer opened with no reports in {reports_dir}")
+		return
+
+	while True:
+		choices = [f"{path.name}" for path in report_paths] + ["Return to main menu"]
+		choice = terminal_ui.prompt_choice("Select a report to view:", choices, default=0)
+
+		if choice == "Return to main menu":
+			app_logging.log_info("User returned to main menu from report viewer")
+			return
+
+		selected_path = report_paths[choices.index(choice)]
+		print("\n" + "=" * 80)
+		print(f"REPORT: {selected_path.name}")
+		print("=" * 80)
+		try:
+			print(reporting.read_saved_report(selected_path))
+		except OSError as exc:
+			print(f"Failed to read report {selected_path.name}: {exc}")
+			app_logging.log_error(f"Report read failed path={selected_path} error={exc}")
+		print("=" * 80)
+
+		if terminal_ui.interactive:
+			input("Press Enter to return to report list...")
+
+
 def main(interactive: bool = False) -> int:
 	try:
 		app_config = config.load_config()
@@ -118,9 +150,15 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2}:
+				if menu_choice not in {1, 2, 3}:
 					print("Invalid menu selection.")
 					return 1
+
+				if menu_choice == 3:
+					_view_reports(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
 
 				if menu_choice == 1:
 					pending_states = _pending_states(app_config)

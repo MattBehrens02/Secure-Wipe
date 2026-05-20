@@ -278,6 +278,77 @@ class TestUtilitiesAndMain(unittest.TestCase):
         import modules.uploader  # noqa: F401
         import modules.verification  # noqa: F401
 
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[3, -1])
+    @patch("main.reporting.list_saved_reports", return_value=[])
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    def test_main_view_reports_handles_empty_report_directory(
+        self,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_list_reports,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        rc = main.main(interactive=True)
+        self.assertEqual(rc, 0)
+        mock_list_reports.assert_called_once_with("/tmp/reports")
+
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[3, -1])
+    @patch("main.reporting.read_saved_report", return_value="report body")
+    @patch("main.reporting.list_saved_reports")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", return_value="")
+    def test_main_view_reports_displays_selected_report(
+        self,
+        _mock_pause,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_list_reports,
+        mock_read_report,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+
+        mock_ui = Mock(interactive=True)
+        mock_ui.prompt_choice.side_effect = ["sample.txt", "Return to main menu"]
+        mock_ui_from_config.return_value = mock_ui
+
+        mock_list_reports.return_value = [__import__("pathlib").Path("/tmp/reports/sample.txt")]
+
+        rc = main.main(interactive=True)
+        self.assertEqual(rc, 0)
+        mock_read_report.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
