@@ -112,6 +112,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
 
     @patch("main.sys.stdin.isatty", return_value=True)
     @patch("main.menu_shell.run", side_effect=[2, -1])
+    @patch("builtins.input", return_value="1")
     @patch("main.recovery.release_lock")
     @patch("main.recovery.acquire_lock", return_value=(True, None))
     @patch("main.recovery.should_offer_resume", return_value=True)
@@ -138,6 +139,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
         _mock_should_offer_resume,
         mock_acquire_lock,
         mock_release_lock,
+        _mock_input,
         mock_menu_run,
         _mock_isatty,
     ):
@@ -156,8 +158,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
         )
         mock_load_config.return_value = cfg
 
-        mock_ui = Mock()
-        mock_ui.prompt_choice.return_value = "Resume /dev/sda"
+        mock_ui = Mock(interactive=True)
         mock_ui_from_config.return_value = mock_ui
 
         pending_state = SimpleNamespace(
@@ -315,7 +316,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.reporting.list_saved_reports")
     @patch("main.config.load_config")
     @patch("main.TerminalUI.from_config")
-    @patch("builtins.input", return_value="")
+    @patch("builtins.input", side_effect=["1", "", "r"])
     def test_main_view_reports_displays_selected_report(
         self,
         _mock_pause,
@@ -339,9 +340,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
         )
         mock_load_config.return_value = cfg
 
-        mock_ui = Mock(interactive=True)
-        mock_ui.prompt_choice.side_effect = ["sample.txt", "Return to main menu"]
-        mock_ui_from_config.return_value = mock_ui
+        mock_ui_from_config.return_value = Mock(interactive=True)
 
         mock_list_reports.return_value = [__import__("pathlib").Path("/tmp/reports/sample.txt")]
 
@@ -354,8 +353,10 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.config.save_user_config")
     @patch("main.config.load_config")
     @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["1", "r"])
     def test_main_configuration_menu_persists_toggle_changes(
         self,
+        _mock_input,
         mock_ui_from_config,
         mock_load_config,
         mock_save_config,
@@ -378,12 +379,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
         )
         mock_load_config.return_value = cfg
 
-        mock_ui = Mock(interactive=True)
-        mock_ui.prompt_choice.side_effect = [
-            "Toggle Dry Run (currently: ON)",
-            "Return to main menu",
-        ]
-        mock_ui_from_config.return_value = mock_ui
+        mock_ui_from_config.return_value = Mock(interactive=True)
 
         rc = main.main(interactive=True)
         self.assertEqual(rc, 0)

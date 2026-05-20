@@ -8,6 +8,28 @@ from modules import app_logging
 from modules.terminal import TerminalUI
 
 
+SUBMENU_WIDTH = 80
+REPORTS_PAGE_SIZE = 20
+
+
+def _submenu_line() -> None:
+	print("+" + "-" * (SUBMENU_WIDTH - 2) + "+")
+
+
+def _print_submenu(title: str, options: list[str], footer: str) -> None:
+	_submenu_line()
+	title_content = f" {title} "
+	title_padding = max(0, (SUBMENU_WIDTH - 2 - len(title_content)) // 2)
+	print("|" + " " * title_padding + title_content.ljust(SUBMENU_WIDTH - 2 - title_padding) + "|")
+	_submenu_line()
+	for index, option in enumerate(options, start=1):
+		label = f" [{index}] {option}"
+		print("|" + label.ljust(SUBMENU_WIDTH - 2) + "|")
+	_submenu_line()
+	print("|" + f" {footer}".ljust(SUBMENU_WIDTH - 2) + "|")
+	_submenu_line()
+
+
 def _recovery_settings(app_config):
 	recovery_cfg = getattr(app_config, "recovery", object())
 	state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
@@ -63,14 +85,22 @@ def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] |
 			f"Current step: {state.current_step}, Updated: {state.updated_at}"
 		)
 
-	choices = [f"Resume {state.drive_path}" for state in resume_candidates_sorted] + ["Return to main menu"]
-	choice = terminal_ui.prompt_choice("Select a pending job to restart:", choices, default=0)
+	choices = [f"Resume {state.drive_path}" for state in resume_candidates_sorted]
+	while True:
+		_print_submenu("Pending Jobs", choices, "Enter number or R to return")
+		if not terminal_ui.interactive:
+			selected_index = 0
+			break
+		user_input = input("Select pending job: ").strip()
+		if user_input.lower() == "r":
+			app_logging.log_info("User returned to main menu from pending restart list")
+			return None
+		if user_input.isdigit():
+			selected_index = int(user_input) - 1
+			if 0 <= selected_index < len(choices):
+				break
+		print("Invalid selection. Enter a listed number or R.")
 
-	if choice == "Return to main menu":
-		app_logging.log_info("User returned to main menu from pending restart list")
-		return None
-
-	selected_index = choices.index(choice)
 	selected_state = resume_candidates_sorted[selected_index]
 	metadata = selected_state.metadata if isinstance(selected_state.metadata, dict) else {}
 	selected_drive = SimpleNamespace(
@@ -102,15 +132,43 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 		app_logging.log_info(f"Report viewer opened with no reports in {reports_dir}")
 		return
 
+	page_index = 0
+	page_count = max(1, (len(report_paths) + REPORTS_PAGE_SIZE - 1) // REPORTS_PAGE_SIZE)
 	while True:
-		choices = [f"{path.name}" for path in report_paths] + ["Return to main menu"]
-		choice = terminal_ui.prompt_choice("Select a report to view:", choices, default=0)
+		start = page_index * REPORTS_PAGE_SIZE
+		end = start + REPORTS_PAGE_SIZE
+		page_reports = report_paths[start:end]
+		options = [path.name for path in page_reports]
+		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P to navigate, R to return"
+		_print_submenu("Report Viewer", options, footer)
 
-		if choice == "Return to main menu":
-			app_logging.log_info("User returned to main menu from report viewer")
-			return
+		if not terminal_ui.interactive:
+			if not page_reports:
+				return
+			selected_path = page_reports[0]
+		else:
+			user_input = input("Select report: ").strip()
+			lowered = user_input.lower()
+			if lowered == "r":
+				app_logging.log_info("User returned to main menu from report viewer")
+				return
+			if lowered == "n":
+				if page_index < page_count - 1:
+					page_index += 1
+				continue
+			if lowered == "p":
+				if page_index > 0:
+					page_index -= 1
+				continue
+			if not user_input.isdigit():
+				print("Invalid selection. Enter a number, N, P, or R.")
+				continue
+			selected_index = int(user_input) - 1
+			if selected_index < 0 or selected_index >= len(page_reports):
+				print("Invalid selection. Enter a number from the current page.")
+				continue
+			selected_path = page_reports[selected_index]
 
-		selected_path = report_paths[choices.index(choice)]
 		print("\n" + "=" * 80)
 		print(f"REPORT: {selected_path.name}")
 		print("=" * 80)
@@ -122,7 +180,7 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 		print("=" * 80)
 
 		if terminal_ui.interactive:
-			input("Press Enter to return to report list...")
+			input("Press Enter to return to report list (or R at menu to exit)...")
 
 
 def _configure_settings(app_config, terminal_ui: TerminalUI):
@@ -133,11 +191,27 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			f"Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
 			f"Toggle Logging Level (currently: {app_config.logging.level.upper()})",
 			f"Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
-			"Return to main menu",
 		]
-		choice = terminal_ui.prompt_choice("Configuration menu:", choices, default=0)
+		_print_submenu("Configuration", choices, "Enter number or R to return")
 
-		if choice == "Return to main menu":
+		if not terminal_ui.interactive:
+			selected_index = 0
+		else:
+			user_input = input("Select configuration action: ").strip()
+			if user_input.lower() == "r":
+				app_logging.log_info("User returned to main menu from configuration menu")
+				return app_config
+			if not user_input.isdigit():
+				print("Invalid selection. Enter a number or R.")
+				continue
+			selected_index = int(user_input) - 1
+			if selected_index < 0 or selected_index >= len(choices):
+				print("Invalid selection. Enter a listed number or R.")
+				continue
+
+		choice = choices[selected_index]
+
+		if choice.lower() == "r":
 			app_logging.log_info("User returned to main menu from configuration menu")
 			return app_config
 
