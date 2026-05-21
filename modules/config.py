@@ -17,28 +17,16 @@ class PathsConfig:
 class RuntimeConfig:
     environment: str = "dev"  # dev, test, prod
     dry_run: bool = True
-    simulate_tools: bool = False
-    require_root_user: bool = True
 
 @dataclass
 class SafetyConfig:
-    require_explicit_device_selection: bool = True
     mount_handling_mode: str = "deny"  # deny | allow
     removable_drive_mode: str = "deny"     # deny | allow
-    protected_device_patterns: List[str] = field(default_factory=lambda: ["/dev/sda", "/dev/nvme0n1"])
     confirmation_steps: int = 2 # 0 = none, 1 = single prompt: [y]es/[n]o, 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm (Recommended)
 
 @dataclass
 class DriveDetectionConfig:
     collect_smart_info: bool = True
-
-@dataclass
-class WipeConfig:
-    method: str = "cryptographic"  # cryptographic, overwrite, hybrid
-    overwrite_passes: int = 3
-    block_size: str = "1M"
-    command_timeout_seconds: int = 600
-    per_device_timeout_minutes: int = 60
 
 @dataclass
 class VerificationConfig:
@@ -58,18 +46,14 @@ class RecoveryConfig:
 
 @dataclass
 class ReportingConfig:
-    reports_enabled: bool = True
     formats: List[str] = field(default_factory=lambda: ["json", "txt"])
     detail_level: str = "verbose"  # minimal | standard | verbose
-    include_hardware_fingerprint: bool = True
-    redact_sensitive_fields: bool = True
     operator_identifier: str = "unknown"
 @dataclass
 class UploadConfig:
     enabled: bool = False
     repo: Optional[str] = None
     branch: str = "main"
-    path_template: str = "reports/{date}/{hostname}/"
     retry_count: int = 3
 
 @dataclass
@@ -83,7 +67,6 @@ class AppConfig:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     drive_detection: DriveDetectionConfig = field(default_factory=DriveDetectionConfig)
-    wipe: WipeConfig = field(default_factory=WipeConfig)
     verification: VerificationConfig = field(default_factory=VerificationConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
