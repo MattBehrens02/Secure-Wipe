@@ -1,3 +1,4 @@
+from modules import version
 def print_header():
     print(r"""
    _____                         
@@ -11,3 +12,5 @@ def print_header():
 |__/|__/_/ .___/\___/            
         /_/
     """)
+    print(f"{version.AppVersion.app_name} - Version {version.AppVersion.app_version}")
+    

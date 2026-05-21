@@ -1,7 +1,9 @@
 import json
-import subprocess
+import shutil
 from dataclasses import dataclass
 from typing import Any
+
+from modules.terminal import CommandRunnerError, CommandRunnerTimeout, run_command
 
 
 class SmartctlError(Exception):
@@ -18,20 +20,22 @@ class SmartctlResult:
     stderr: str
 
 
+def is_smartctl_available() -> bool:
+    """Return True when smartctl is available in PATH."""
+    return shutil.which("smartctl") is not None
+
+
 def _run_smartctl(device_path: str, timeout: int = 10) -> SmartctlResult:
     """Execute smartctl for a single device and capture its output."""
     try:
-        completed = subprocess.run(
+        completed = run_command(
             ["smartctl", "--json", "--all", device_path],
-            capture_output=True,
-            text=True,
-            check=False,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired as exc:
+    except CommandRunnerTimeout as exc:
         raise SmartctlError(f"smartctl timed out for {device_path}") from exc
-    except OSError as exc:
-        raise SmartctlError(f"failed to execute smartctl for {device_path}: {exc}") from exc
+    except CommandRunnerError as exc:
+        raise SmartctlError(str(exc)) from exc
 
     return SmartctlResult(
         device_path=device_path,

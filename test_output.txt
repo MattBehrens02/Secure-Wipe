@@ -1,0 +1,228 @@
+test_disabled_logging_writes_nothing (test_app_logging.TestAppLogging.test_disabled_logging_writes_nothing) ... ok
+test_errors_level_logs_only_errors (test_app_logging.TestAppLogging.test_errors_level_logs_only_errors) ... ok
+test_info_level_logs_info_and_error (test_app_logging.TestAppLogging.test_info_level_logs_info_and_error) ... /home/mbehrens/projects/Secure-Wipe/modules/app_logging.py:34: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmplqc5qh6o/2026-05-19.log' mode='a' encoding='utf-8'>
+  logger.handlers.clear()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_load_config_applies_valid_overrides (test_config.TestConfig.test_load_config_applies_valid_overrides) ... ok
+test_load_config_defaults_when_file_missing (test_config.TestConfig.test_load_config_defaults_when_file_missing) ... ok
+test_prod_environment_overrides_paths_to_project_root (test_config.TestConfig.test_prod_environment_overrides_paths_to_project_root) ... ok
+test_rejects_invalid_environment (test_config.TestConfig.test_rejects_invalid_environment) ... ok
+test_rejects_unknown_toml_table (test_config.TestConfig.test_rejects_unknown_toml_table) ... ok
+test_apply_safety_policy_filters_removable_and_mounted (test_drive_detection.TestDriveDetection.test_apply_safety_policy_filters_removable_and_mounted) ... ok
+test_coerce_rotational (test_drive_detection.TestDriveDetection.test_coerce_rotational) ... ok
+test_confirm_all_drives_two_steps_success (test_drive_detection.TestDriveDetection.test_confirm_all_drives_two_steps_success) ... ok
+test_detect_drives_success (test_drive_detection.TestDriveDetection.test_detect_drives_success) ... ok
+test_detect_drives_timeout (test_drive_detection.TestDriveDetection.test_detect_drives_timeout) ... ok
+test_get_user_input_valid_multi_select (test_drive_detection.TestDriveDetection.test_get_user_input_valid_multi_select) ... ok
+test_normalize_drive_data_ignores_non_disk (test_drive_detection.TestDriveDetection.test_normalize_drive_data_ignores_non_disk) ... ok
+test_normalize_drives_happy_path (test_drive_detection.TestDriveDetection.test_normalize_drives_happy_path) ... ok
+test_acquire_and_release_lock (test_recovery.TestRecoveryLocking.test_acquire_and_release_lock) ... ok
+test_lock_rejects_second_active_acquire (test_recovery.TestRecoveryLocking.test_lock_rejects_second_active_acquire) ... ok
+test_stale_lock_is_replaced (test_recovery.TestRecoveryLocking.test_stale_lock_is_replaced) ... ok
+test_should_offer_resume_allows_failed_when_enabled (test_recovery.TestRecoveryPolicy.test_should_offer_resume_allows_failed_when_enabled) ... ok
+test_should_offer_resume_blocks_old_state (test_recovery.TestRecoveryPolicy.test_should_offer_resume_blocks_old_state) ... ok
+test_should_offer_resume_blocks_when_resume_limit_reached (test_recovery.TestRecoveryPolicy.test_should_offer_resume_blocks_when_resume_limit_reached) ... ok
+test_should_offer_resume_default_policy_blocks_failed (test_recovery.TestRecoveryPolicy.test_should_offer_resume_default_policy_blocks_failed) ... ok
+test_clear_state_deletes_existing_file (test_recovery.TestRecoveryStatePersistence.test_clear_state_deletes_existing_file) ... ok
+test_list_incomplete_states_filters_completed (test_recovery.TestRecoveryStatePersistence.test_list_incomplete_states_filters_completed) ... ok
+test_load_state_returns_none_for_corrupt_json (test_recovery.TestRecoveryStatePersistence.test_load_state_returns_none_for_corrupt_json) ... ok
+test_load_state_with_serial_falls_back_to_path_file (test_recovery.TestRecoveryStatePersistence.test_load_state_with_serial_falls_back_to_path_file) ... ok
+test_save_and_load_state_prefers_serial_identity (test_recovery.TestRecoveryStatePersistence.test_save_and_load_state_prefers_serial_identity) ... ok
+test_save_and_load_state_roundtrip (test_recovery.TestRecoveryStatePersistence.test_save_and_load_state_roundtrip) ... ok
+test_build_detection_report_minimal (test_reporting.TestDetectionReporting.test_build_detection_report_minimal) ... ok
+test_build_detection_report_verbose (test_reporting.TestDetectionReporting.test_build_detection_report_verbose) ... ok
+test_generate_wipe_report_failed_wipe (test_reporting.TestGenerateWipeReport.test_generate_wipe_report_failed_wipe) ... ok
+test_generate_wipe_report_includes_recovery_resume_fields (test_reporting.TestGenerateWipeReport.test_generate_wipe_report_includes_recovery_resume_fields) ... ok
+test_generate_wipe_report_success (test_reporting.TestGenerateWipeReport.test_generate_wipe_report_success) ... ok
+test_generate_wipe_report_with_hdd (test_reporting.TestGenerateWipeReport.test_generate_wipe_report_with_hdd) ... ok
+test_generate_wipe_report_with_verification_result (test_reporting.TestGenerateWipeReport.test_generate_wipe_report_with_verification_result) ... ok
+test_wipe_report_to_json_minimal_omits_verbose_fields (test_reporting.TestJsonSerialization.test_wipe_report_to_json_minimal_omits_verbose_fields) ... ok
+test_wipe_report_to_json_pretty (test_reporting.TestJsonSerialization.test_wipe_report_to_json_pretty) ... ok
+test_wipe_report_to_json_standard_includes_method_but_not_step_durations (test_reporting.TestJsonSerialization.test_wipe_report_to_json_standard_includes_method_but_not_step_durations) ... ok
+test_wipe_report_to_json_valid_structure (test_reporting.TestJsonSerialization.test_wipe_report_to_json_valid_structure) ... ok
+test_wipe_report_to_json_verbose_includes_recovery_state (test_reporting.TestJsonSerialization.test_wipe_report_to_json_verbose_includes_recovery_state) ... ok
+test_save_wipe_report_creates_directory (test_reporting.TestSaveWipeReport.test_save_wipe_report_creates_directory) ... ok
+test_save_wipe_report_creates_json_file (test_reporting.TestSaveWipeReport.test_save_wipe_report_creates_json_file) ... ok
+test_save_wipe_report_creates_text_file (test_reporting.TestSaveWipeReport.test_save_wipe_report_creates_text_file) ... ok
+test_save_wipe_report_json_content_valid (test_reporting.TestSaveWipeReport.test_save_wipe_report_json_content_valid) ... ok
+test_save_wipe_report_respects_minimal_detail_level (test_reporting.TestSaveWipeReport.test_save_wipe_report_respects_minimal_detail_level) ... ok
+test_wipe_report_to_text_failed_formatting (test_reporting.TestTextFormatting.test_wipe_report_to_text_failed_formatting) ... ok
+test_wipe_report_to_text_includes_headers (test_reporting.TestTextFormatting.test_wipe_report_to_text_includes_headers) ... ok
+test_wipe_report_to_text_minimal_omits_verbose_sections (test_reporting.TestTextFormatting.test_wipe_report_to_text_minimal_omits_verbose_sections) ... ok
+test_wipe_report_to_text_standard_includes_method_without_timeline (test_reporting.TestTextFormatting.test_wipe_report_to_text_standard_includes_method_without_timeline) ... ok
+test_wipe_report_to_text_success_formatting (test_reporting.TestTextFormatting.test_wipe_report_to_text_success_formatting) ... ok
+test_format_duration_minutes (test_reporting.TestUtilityFunctions.test_format_duration_minutes) ... ok
+test_format_duration_seconds (test_reporting.TestUtilityFunctions.test_format_duration_seconds) ... ok
+test_humanize_size_bytes (test_reporting.TestUtilityFunctions.test_humanize_size_bytes) ... ok
+test_humanize_size_gigabytes (test_reporting.TestUtilityFunctions.test_humanize_size_gigabytes) ... ok
+test_wipe_report_creation_with_defaults (test_reporting.TestWipeReport.test_wipe_report_creation_with_defaults) ... ok
+test_wipe_report_creation_with_values (test_reporting.TestWipeReport.test_wipe_report_creation_with_values) ... ok
+test_collect_smart_info_nonzero_adds_metadata (test_smartctl.TestSmartctl.test_collect_smart_info_nonzero_adds_metadata) ... ok
+test_collect_smart_info_parses_json (test_smartctl.TestSmartctl.test_collect_smart_info_parses_json) ... ok
+test_collect_smart_snapshot_fail_open (test_smartctl.TestSmartctl.test_collect_smart_snapshot_fail_open) ... ok
+test_is_smartctl_available_true (test_smartctl.TestSmartctl.test_is_smartctl_available_true) ... ok
+test_run_command_raises_on_nonzero_when_check_true (test_terminal.TestTerminal.test_run_command_raises_on_nonzero_when_check_true) ... ok
+test_run_command_success (test_terminal.TestTerminal.test_run_command_success) ... ok
+test_run_command_timeout (test_terminal.TestTerminal.test_run_command_timeout) ... ok
+test_terminal_ui_from_config (test_terminal.TestTerminal.test_terminal_ui_from_config) ... ok
+test_terminal_ui_noop_when_non_interactive (test_terminal.TestTerminal.test_terminal_ui_noop_when_non_interactive) ... ok
+test_wipe_commands_build_expected_commands (test_terminal.TestTerminal.test_wipe_commands_build_expected_commands) ... ok
+test_clone_repo_failure_raises_upload_error (test_uploader.TestGitUploader.test_clone_repo_failure_raises_upload_error) ... ok
+test_clone_repo_success (test_uploader.TestGitUploader.test_clone_repo_success) ... ok
+test_push_to_remote_fails_on_non_network_error (test_uploader.TestGitUploader.test_push_to_remote_fails_on_non_network_error) ... ok
+test_push_to_remote_retries_on_network_error (test_uploader.TestGitUploader.test_push_to_remote_retries_on_network_error) ... ok
+test_push_to_remote_success (test_uploader.TestGitUploader.test_push_to_remote_success) ... ok
+test_stage_and_commit_copies_reports_and_commits (test_uploader.TestGitUploader.test_stage_and_commit_copies_reports_and_commits) ... ok
+test_verify_repo_valid_fails_when_not_git_repo (test_uploader.TestGitUploader.test_verify_repo_valid_fails_when_not_git_repo) ... ok
+test_verify_repo_valid_succeeds_when_git_repo_exists (test_uploader.TestGitUploader.test_verify_repo_valid_succeeds_when_git_repo_exists) ... ok
+test_add_pending_raises_when_report_missing (test_uploader.TestUploadQueue.test_add_pending_raises_when_report_missing) ... ok
+test_add_pending_writes_report_path_to_queue (test_uploader.TestUploadQueue.test_add_pending_writes_report_path_to_queue) ... ok
+test_list_pending_filters_missing_files (test_uploader.TestUploadQueue.test_list_pending_filters_missing_files) ... ok
+test_mark_uploaded_removes_from_queue (test_uploader.TestUploadQueue.test_mark_uploaded_removes_from_queue) ... ok
+test_queue_persists_across_instances (test_uploader.TestUploadQueue.test_queue_persists_across_instances) ... ok
+test_upload_reports_disabled_returns_true (test_uploader.TestUploadReports.test_upload_reports_disabled_returns_true) ... ok
+test_upload_reports_dry_run_returns_true (test_uploader.TestUploadReports.test_upload_reports_dry_run_returns_true) ... ok
+test_upload_reports_failure_keeps_reports_in_queue (test_uploader.TestUploadReports.test_upload_reports_failure_keeps_reports_in_queue) ... ok
+test_upload_reports_no_repo_url_returns_false (test_uploader.TestUploadReports.test_upload_reports_no_repo_url_returns_false) ... ok
+test_upload_reports_success_marks_uploaded (test_uploader.TestUploadReports.test_upload_reports_success_marks_uploaded) ... ok
+test_ensure_runtime_directories_creates_missing_dirs (test_util_and_main.TestUtilitiesAndMain.test_ensure_runtime_directories_creates_missing_dirs) ... ok
+test_header_prints_banner (test_util_and_main.TestUtilitiesAndMain.test_header_prints_banner) ... ok
+test_main_restart_pending_jobs_uses_recovery_state_drive (test_util_and_main.TestUtilitiesAndMain.test_main_restart_pending_jobs_uses_recovery_state_drive) ... /home/mbehrens/projects/Secure-Wipe/modules/app_logging.py:34: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmp0sohlvez/2026-05-19.log' mode='a' encoding='utf-8'>
+  logger.handlers.clear()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_main_returns_one_when_no_drives (test_util_and_main.TestUtilitiesAndMain.test_main_returns_one_when_no_drives) ... /home/mbehrens/projects/Secure-Wipe/modules/app_logging.py:34: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/mbehrens/projects/Secure-Wipe/logs/2026-05-19.log' mode='a' encoding='utf-8'>
+  logger.handlers.clear()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_main_success_flow_runs_engine_for_each_drive (test_util_and_main.TestUtilitiesAndMain.test_main_success_flow_runs_engine_for_each_drive) ... ok
+test_main_warns_when_starting_with_pending_states (test_util_and_main.TestUtilitiesAndMain.test_main_warns_when_starting_with_pending_states) ... ok
+test_placeholder_modules_import (test_util_and_main.TestUtilitiesAndMain.test_placeholder_modules_import) ... ok
+test_restart_returns_to_menu_when_no_pending_jobs (test_util_and_main.TestUtilitiesAndMain.test_restart_returns_to_menu_when_no_pending_jobs) ... ok
+test_check_filesystem_signatures_absent_fails_when_output_present (test_verification.TestVerificationChecks.test_check_filesystem_signatures_absent_fails_when_output_present) ... ok
+test_check_filesystem_signatures_absent_passes_when_output_empty (test_verification.TestVerificationChecks.test_check_filesystem_signatures_absent_passes_when_output_empty) ... ok
+test_check_luks_header_destroyed_fails_when_header_still_exists (test_verification.TestVerificationChecks.test_check_luks_header_destroyed_fails_when_header_still_exists) ... ok
+test_check_luks_header_destroyed_passes_when_luksdump_fails (test_verification.TestVerificationChecks.test_check_luks_header_destroyed_passes_when_luksdump_fails) ... ok
+test_check_random_sector_sampling_hdd_requires_zeroes (test_verification.TestVerificationChecks.test_check_random_sector_sampling_hdd_requires_zeroes) ... ok
+test_check_random_sector_sampling_ssd_is_informational (test_verification.TestVerificationChecks.test_check_random_sector_sampling_ssd_is_informational) ... ok
+test_verify_wipe_collects_smart_after_when_available (test_verification.TestVerifyWipe.test_verify_wipe_collects_smart_after_when_available) ... ok
+test_verify_wipe_not_run_when_disabled (test_verification.TestVerifyWipe.test_verify_wipe_not_run_when_disabled) ... ok
+test_verify_wipe_returns_dry_run_when_requested (test_verification.TestVerifyWipe.test_verify_wipe_returns_dry_run_when_requested) ... ok
+test_verify_wipe_returns_failed_when_core_check_fails (test_verification.TestVerifyWipe.test_verify_wipe_returns_failed_when_core_check_fails) ... ok
+test_verify_wipe_returns_passed_when_all_core_checks_pass (test_verification.TestVerifyWipe.test_verify_wipe_returns_passed_when_all_core_checks_pass) ... ok
+test_close_encrypted_container_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_close_encrypted_container_invokes_expected_command) ... ok
+test_create_luks2_container_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_create_luks2_container_invokes_expected_command) ... ok
+test_destroy_luks2_container_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_destroy_luks2_container_invokes_expected_command) ... ok
+test_execute_attempts_mapper_close_in_finally_when_failure_occurs_after_open (test_wipe_engine.TestWipeEngine.test_execute_attempts_mapper_close_in_finally_when_failure_occurs_after_open) ... ok
+test_execute_carries_pre_wipe_smart_snapshot (test_wipe_engine.TestWipeEngine.test_execute_carries_pre_wipe_smart_snapshot) ... ok
+test_execute_dry_run_returns_and_runs_internal_steps (test_wipe_engine.TestWipeEngine.test_execute_dry_run_returns_and_runs_internal_steps) ... ok
+test_execute_includes_duration_metrics_in_result (test_wipe_engine.TestWipeEngine.test_execute_includes_duration_metrics_in_result) ... ok
+test_execute_returns_structured_failure_result_when_step_raises (test_wipe_engine.TestWipeEngine.test_execute_returns_structured_failure_result_when_step_raises) ... ok
+test_execute_runs_final_hdd_overwrite_when_drive_is_hdd (test_wipe_engine.TestWipeEngine.test_execute_runs_final_hdd_overwrite_when_drive_is_hdd) ... ok
+test_execute_runs_steps_in_order_when_not_dry_run (test_wipe_engine.TestWipeEngine.test_execute_runs_steps_in_order_when_not_dry_run) ... ok
+test_execute_skips_final_hdd_overwrite_when_drive_is_not_hdd (test_wipe_engine.TestWipeEngine.test_execute_skips_final_hdd_overwrite_when_drive_is_not_hdd) ... ok
+test_execute_with_recovery_creates_and_clears_state_on_success (test_wipe_engine.TestWipeEngine.test_execute_with_recovery_creates_and_clears_state_on_success) ... ok
+test_execute_with_recovery_resumes_after_last_completed_step (test_wipe_engine.TestWipeEngine.test_execute_with_recovery_resumes_after_last_completed_step) ... ok
+test_final_hdd_overwrite_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_final_hdd_overwrite_invokes_expected_command) ... ok
+test_generate_temporary_key_invokes_dd (test_wipe_engine.TestWipeEngine.test_generate_temporary_key_invokes_dd) ... ok
+test_internal_run_step_command_skips_execution_in_dry_run (test_wipe_engine.TestWipeEngine.test_internal_run_step_command_skips_execution_in_dry_run) ... ok
+test_open_encrypted_container_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_open_encrypted_container_invokes_expected_command) ... ok
+test_remove_residual_signatures_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_remove_residual_signatures_invokes_expected_command) ... ok
+test_verify_with_config_delegates_to_verification_module (test_wipe_engine.TestWipeEngine.test_verify_with_config_delegates_to_verification_module) ... ok
+test_wipe_result_format_duration_summary_with_human_readable_names (test_wipe_engine.TestWipeEngine.test_wipe_result_format_duration_summary_with_human_readable_names) ... ok
+test_write_across_encrypted_drive_invokes_expected_command (test_wipe_engine.TestWipeEngine.test_write_across_encrypted_drive_invokes_expected_command) ... ok
+
+----------------------------------------------------------------------
+Ran 125 tests in 0.046s
+
+OK
+Skipping /dev/sdb: mounted drives are set to deny.
+Skipping /dev/sdc: removable drives are set to deny.
+
+You have selected the following drive for wiping:
+- /dev/sda (1T, Fixed)
+
+   _____                         
+  / ___/___  _______  __________ 
+  \__ \/ _ \/ ___/ / / / ___/ _ \
+ ___/ /  __/ /__/ /_/ / /  /  __/
+/____/\___/\___/\__,_/_/   \___/ 
+| |     / (_)___  ___            
+| | /| / / / __ \/ _ \           
+| |/ |/ / / /_/ /  __/           
+|__/|__/_/ .___/\___/            
+        /_/
+    
+Secure Wipe - Version 26.0.4
+
+Available Drives:
+
+ Drive Name                            Path              Size Media  Type
+------------------------------------------------------------------------------
+  [1] Unknown Drive                    /dev/sda            1T Unknown (Fixed)
+  [2] Unknown Drive                    /dev/sdb            1T Unknown (Fixed)
+
+
+Enter the number(s) corresponding to the drive(s) you want to wipe, separated by commas, or 'q' to quit.
+Created missing directory: /tmp/tmpuuf9de05/logs
+Created missing directory: /tmp/tmpuuf9de05/reports
+Created missing directory: /tmp/tmpuuf9de05/state
+Created missing directory: /tmp/tmpuuf9de05/tmp
+
+Pending jobs:
+  Drive: /dev/sda, Status: interrupted, Current step: open_encrypted_container, Updated: 2026-05-19T10:00:00+00:00
+Loaded configuration: environment=test, dry_run=True
+Wipe result for /dev/sda: dry_run
+Verification result for /dev/sda: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+
+Action result: SUCCESS. Returning to main menu...
+Exiting...
+Loaded configuration: environment=test, dry_run=True
+No drives detected.
+Loaded configuration: environment=test, dry_run=True
+Wipe result for /dev/sda: dry_run
+Verification result for /dev/sda: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+Wipe result for /dev/sdb: dry_run
+Verification result for /dev/sdb: dry_run
+
+Wipe report saved:
+  JSON: /tmp/report.json
+  Text: /tmp/report.txt
+Report upload: SUCCESS
+No pending jobs are available to restart.
+Exiting...
+[INFO] Closing encrypted container...
+[INFO] Creating LUKS2 container...
+[INFO] Destroying LUKS2 header...
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[ERROR] Wipe failed at step 'write_across_encrypted_drive': write failed
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[DRY RUN] rm -f /tmp/securewipe.key
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[DRY RUN] rm -f /tmp/securewipe.key
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[ERROR] Wipe failed at step 'create_luks2_container': boom
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[DRY RUN] rm -f /tmp/securewipe.key
+[INFO] Skipping final HDD overwrite since drive is not detected as HDD.
+[INFO] Resuming wipe at step index 2 for /dev/sdz
+[INFO] Performing final HDD overwrite...
+[INFO] Generating temporary keyfile...
+[DRY RUN] echo noop
+[INFO] Opening encrypted container...
+[INFO] Removing residual filesystem signatures...
+[INFO] Scrubbing mapped device...

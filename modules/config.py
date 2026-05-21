@@ -17,28 +17,16 @@ class PathsConfig:
 class RuntimeConfig:
     environment: str = "dev"  # dev, test, prod
     dry_run: bool = True
-    simulate_tools: bool = False
-    require_root_user: bool = True
 
 @dataclass
 class SafetyConfig:
-    require_explicit_device_selection: bool = True
     mount_handling_mode: str = "deny"  # deny | allow
     removable_drive_mode: str = "deny"     # deny | allow
-    protected_device_patterns: List[str] = field(default_factory=lambda: ["/dev/sda", "/dev/nvme0n1"])
     confirmation_steps: int = 2 # 0 = none, 1 = single prompt: [y]es/[n]o, 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm (Recommended)
 
 @dataclass
 class DriveDetectionConfig:
     collect_smart_info: bool = True
-
-@dataclass
-class WipeConfig:
-    method: str = "cryptographic"  # cryptographic, overwrite, hybrid
-    overwrite_passes: int = 3
-    block_size: str = "1M"
-    command_timeout_seconds: int = 600
-    per_device_timeout_minutes: int = 60
 
 @dataclass
 class VerificationConfig:
@@ -52,31 +40,26 @@ class RecoveryConfig:
     checkpoint_interval_seconds: int = 60
     max_resume_attempts: int = 3
     lock_file_path: str = "/app/state/wipe.lock"
+    lock_stale_seconds: int = 7200
+    resume_state_max_age_seconds: int = 86400
+    allow_failed_resume: bool = False
 
 @dataclass
 class ReportingConfig:
-    reports_enabled: bool = True
     formats: List[str] = field(default_factory=lambda: ["json", "txt"])
     detail_level: str = "verbose"  # minimal | standard | verbose
-    include_hardware_fingerprint: bool = True
-    redact_sensitive_fields: bool = True
-
+    operator_identifier: str = "unknown"
 @dataclass
 class UploadConfig:
     enabled: bool = False
     repo: Optional[str] = None
     branch: str = "main"
-    path_template: str = "reports/{date}/{hostname}/"
     retry_count: int = 3
 
 @dataclass
 class LoggingConfig:
-    level: str = "INFO"
-    file_level: str = "DEBUG"
-    console_level: str = "INFO"
-    json_logs: bool = False
-    rotate_max_bytes: int = 10_000_000
-    rotate_backups: int = 5
+    enabled: bool = True
+    level: str = "info"  # info | errors
 
 @dataclass
 class AppConfig:
@@ -84,7 +67,6 @@ class AppConfig:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     drive_detection: DriveDetectionConfig = field(default_factory=DriveDetectionConfig)
-    wipe: WipeConfig = field(default_factory=WipeConfig)
     verification: VerificationConfig = field(default_factory=VerificationConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
@@ -98,8 +80,17 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "runtime": {"environment", "dry_run"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
-    "reporting": {"reports_enabled", "formats", "detail_level"},
-    "logging": {"level", "console_level"},
+    "recovery": {
+        "checkpoint_interval_seconds",
+        "max_resume_attempts",
+        "lock_file_path",
+        "lock_stale_seconds",
+        "resume_state_max_age_seconds",
+        "allow_failed_resume",
+    },
+    "reporting": {"formats", "detail_level"},
+    "upload": {"enabled", "repo", "branch", "retry_count"},
+    "logging": {"enabled", "level"},
 }
 
 
@@ -124,6 +115,21 @@ def _apply_drive_detection_overrides(config: AppConfig, drive_detection_data: di
         config.drive_detection.collect_smart_info = bool(drive_detection_data["collect_smart_info"])
 
 
+def _apply_recovery_overrides(config: AppConfig, recovery_data: dict[str, Any]) -> None:
+    if "checkpoint_interval_seconds" in recovery_data:
+        config.recovery.checkpoint_interval_seconds = int(recovery_data["checkpoint_interval_seconds"])
+    if "max_resume_attempts" in recovery_data:
+        config.recovery.max_resume_attempts = int(recovery_data["max_resume_attempts"])
+    if "lock_file_path" in recovery_data:
+        config.recovery.lock_file_path = str(recovery_data["lock_file_path"])
+    if "lock_stale_seconds" in recovery_data:
+        config.recovery.lock_stale_seconds = int(recovery_data["lock_stale_seconds"])
+    if "resume_state_max_age_seconds" in recovery_data:
+        config.recovery.resume_state_max_age_seconds = int(recovery_data["resume_state_max_age_seconds"])
+    if "allow_failed_resume" in recovery_data:
+        config.recovery.allow_failed_resume = bool(recovery_data["allow_failed_resume"])
+
+
 def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
     unknown_tables = set(raw_data.keys()) - set(_ALLOWED_TOML_KEYS.keys())
     if unknown_tables:
@@ -144,19 +150,28 @@ def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
 
 
 def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]) -> None:
-    if "reports_enabled" in reporting_data:
-        config.reporting.reports_enabled = bool(reporting_data["reports_enabled"])
     if "formats" in reporting_data:
         config.reporting.formats = list(reporting_data["formats"])
     if "detail_level" in reporting_data:
         config.reporting.detail_level = str(reporting_data["detail_level"]).lower()
+
+
+def _apply_upload_overrides(config: AppConfig, upload_data: dict[str, Any]) -> None:
+    if "enabled" in upload_data:
+        config.upload.enabled = bool(upload_data["enabled"])
+    if "repo" in upload_data:
+        config.upload.repo = str(upload_data["repo"]) if upload_data["repo"] else None
+    if "branch" in upload_data:
+        config.upload.branch = str(upload_data["branch"])
+    if "retry_count" in upload_data:
+        config.upload.retry_count = int(upload_data["retry_count"])
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
+    if "enabled" in logging_data:
+        config.logging.enabled = bool(logging_data["enabled"])
     if "level" in logging_data:
-        config.logging.level = str(logging_data["level"])
-    if "console_level" in logging_data:
-        config.logging.console_level = str(logging_data["console_level"])
+        config.logging.level = str(logging_data["level"]).lower()
 
 
 def _validate_config(config: AppConfig) -> None:
@@ -175,11 +190,27 @@ def _validate_config(config: AppConfig) -> None:
     if not isinstance(config.drive_detection.collect_smart_info, bool):
         raise ValueError("drive_detection.collect_smart_info must be a boolean")
 
-    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-    if config.logging.level.upper() not in valid_levels:
-        raise ValueError("logging.level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
-    if config.logging.console_level.upper() not in valid_levels:
-        raise ValueError("logging.console_level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    if config.recovery.checkpoint_interval_seconds <= 0:
+        raise ValueError("recovery.checkpoint_interval_seconds must be > 0")
+
+    if config.recovery.max_resume_attempts < 0:
+        raise ValueError("recovery.max_resume_attempts must be >= 0")
+
+    if config.recovery.lock_stale_seconds <= 0:
+        raise ValueError("recovery.lock_stale_seconds must be > 0")
+
+    if config.recovery.resume_state_max_age_seconds <= 0:
+        raise ValueError("recovery.resume_state_max_age_seconds must be > 0")
+
+    if not isinstance(config.recovery.allow_failed_resume, bool):
+        raise ValueError("recovery.allow_failed_resume must be a boolean")
+
+    if not isinstance(config.logging.enabled, bool):
+        raise ValueError("logging.enabled must be a boolean")
+
+    valid_levels = {"info", "errors"}
+    if config.logging.level not in valid_levels:
+        raise ValueError("logging.level must be one of: info, errors")
 
     valid_formats = {"json", "txt"}
     if not config.reporting.formats:
@@ -221,11 +252,112 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
         drive_detection_data = raw_data.get("drive_detection", {})
         _apply_drive_detection_overrides(config, drive_detection_data)
 
+        recovery_data = raw_data.get("recovery", {})
+        _apply_recovery_overrides(config, recovery_data)
+
         reporting_data = raw_data.get("reporting", {})
         _apply_reporting_overrides(config, reporting_data)
+
+        upload_data = raw_data.get("upload", {})
+        _apply_upload_overrides(config, upload_data)
 
         logging_data = raw_data.get("logging", {})
         _apply_logging_overrides(config, logging_data)
 
     _validate_config(config)
+    if config.runtime.environment == "prod":
+        _project_root = Path(__file__).resolve().parent.parent
+        config.paths.project_root = str(_project_root)
+        config.paths.logs_dir    = str(_project_root / "logs")
+        config.paths.reports_dir = str(_project_root / "reports")
+        config.paths.state_dir   = str(_project_root / "state")
+        config.paths.temp_dir    = str(_project_root / "tmp")
+        if config.recovery.lock_file_path == "/app/state/wipe.lock":
+            config.recovery.lock_file_path = str(_project_root / "state" / "wipe.lock")
+
+
     return config
+
+
+def _format_toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, list):
+        return "[" + ", ".join(_format_toml_value(item) for item in value) + "]"
+    raise ValueError(f"Unsupported TOML value type: {type(value)!r}")
+
+
+def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
+    """Build the user-editable TOML payload from AppConfig.
+
+    Only values from the curated, whitelisted subset are persisted.
+    """
+    return {
+        "runtime": {
+            "environment": config.runtime.environment,
+            "dry_run": config.runtime.dry_run,
+        },
+        "safety": {
+            "removable_drive_mode": config.safety.removable_drive_mode,
+            "mount_handling_mode": config.safety.mount_handling_mode,
+            "confirmation_steps": config.safety.confirmation_steps,
+        },
+        "drive_detection": {
+            "collect_smart_info": config.drive_detection.collect_smart_info,
+        },
+        "recovery": {
+            "checkpoint_interval_seconds": config.recovery.checkpoint_interval_seconds,
+            "max_resume_attempts": config.recovery.max_resume_attempts,
+            "lock_file_path": config.recovery.lock_file_path,
+            "lock_stale_seconds": config.recovery.lock_stale_seconds,
+            "resume_state_max_age_seconds": config.recovery.resume_state_max_age_seconds,
+            "allow_failed_resume": config.recovery.allow_failed_resume,
+        },
+        "reporting": {
+            "formats": list(config.reporting.formats),
+            "detail_level": config.reporting.detail_level,
+        },
+        "upload": {
+            "enabled": config.upload.enabled,
+            "repo": config.upload.repo or "",
+            "branch": config.upload.branch,
+            "retry_count": config.upload.retry_count,
+        },
+        "logging": {
+            "enabled": config.logging.enabled,
+            "level": config.logging.level,
+        },
+    }
+
+
+def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None) -> Path:
+    """Persist the whitelisted user-facing configuration as TOML."""
+    target_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    payload = _user_config_payload(config)
+
+    lines: list[str] = []
+    ordered_tables = [
+        "runtime",
+        "safety",
+        "drive_detection",
+        "recovery",
+        "reporting",
+        "upload",
+        "logging",
+    ]
+
+    for table_name in ordered_tables:
+        table_data = payload[table_name]
+        lines.append(f"[{table_name}]")
+        for key, value in table_data.items():
+            lines.append(f"{key} = {_format_toml_value(value)}")
+        lines.append("")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return target_path
