@@ -114,6 +114,29 @@ Record every manual deletion in incident notes.
 3. Preserve terminal output and attempt one rerun.
 4. If persistent, treat as SEV-3 and file issue with traceback.
 
+## Failure Scenario: Report Viewer Read Failure
+### Symptoms
+- Report viewer cannot open a selected report.
+- Viewer shows read error for a report file.
+
+### Actions
+1. Capture the exact filename and error text from the viewer output.
+2. Check file permissions and encoding viability of the report file.
+3. Verify `reports/` directory readability and disk health.
+4. If one file is corrupted, continue operations and isolate the file for analysis.
+5. If repeated across files, escalate as SEV-3 and attach log excerpts.
+
+## Failure Scenario: Configuration Write Failure
+### Symptoms
+- Configuration submenu reports failure while saving updates.
+
+### Actions
+1. Capture terminal output and current `configuration.toml` state.
+2. Validate file permissions and parent directory writability.
+3. Confirm filesystem free space and read-only mount conditions.
+4. Re-run with no destructive action and verify the same toggle path.
+5. Escalate as SEV-3 if persistent and include traceback/log excerpts.
+
 ## Failure Scenario: Upload Failure
 ### Symptoms
 - Upload failed; reports retained locally.
@@ -146,3 +169,7 @@ Collect and retain:
 2. Add regression tests for discovered edge case when feasible.
 3. Update runbook/playbook if procedure changed.
 4. Track unresolved risks in project known limitations.
+
+## Menu Navigation Notes
+- Submenus use `R` to return to the main menu.
+- Report viewer pagination uses `N`/`P` for navigation and numeric selection for opening entries.

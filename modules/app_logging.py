@@ -11,6 +11,20 @@ _LOGGER_CONFIGURED = False
 _LOGGING_ENABLED = False
 
 
+def _reset_logger_handlers(logger: logging.Logger) -> None:
+    """Close and detach existing handlers.
+
+    Repeated setup calls occur in tests and long-running sessions; closing first
+    prevents leaked file descriptors and ResourceWarning noise.
+    """
+    for handler in list(logger.handlers):
+        try:
+            handler.flush()
+            handler.close()
+        finally:
+            logger.removeHandler(handler)
+
+
 def _normalize_level(level: str) -> str:
     value = (level or "info").strip().lower()
     if value not in {"info", "errors"}:
@@ -31,7 +45,7 @@ def setup_logging(app_config: Any) -> None:
     level_name = _normalize_level(str(getattr(logging_cfg, "level", "info")))
 
     logger = logging.getLogger(LOGGER_NAME)
-    logger.handlers.clear()
+    _reset_logger_handlers(logger)
 
     if not enabled:
         _LOGGING_ENABLED = False

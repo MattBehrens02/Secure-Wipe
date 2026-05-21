@@ -40,11 +40,35 @@ If running from host/venv, ensure configured runtime directories are writable (`
 1. Start in the project root.
 2. Verify configuration values in `configuration.toml`.
 3. Run SecureWipe.
-4. Select drive(s) from presented menu.
-5. Complete confirmation prompts.
+4. Select one of the top-level menu actions:
+	 - Start Job
+	 - Restart Pending Jobs
+	 - View Reports
+	 - Configuration
+5. Complete confirmation prompts for destructive operations.
 6. Wait for wipe + verification completion.
 7. Confirm report output paths displayed by the application.
 8. Archive or upload reports per environment policy.
+
+## Submenu Controls
+- `R`: Return to the main menu from any submenu.
+- Report viewer keys:
+	- Number: Open selected report from current page
+	- `N`: Next report page
+	- `P`: Previous report page
+	- `R`: Return to main menu
+
+Report viewer pagination shows up to 20 report files per page.
+
+## Configuration Submenu Actions
+The Configuration submenu currently supports:
+- Toggle dry run mode
+- Toggle upload enabled mode
+- Toggle SMART collection
+- Toggle logging level (`info`/`errors`)
+- Cycle reporting detail level (`minimal`/`standard`/`verbose`)
+
+Configuration updates are persisted to `configuration.toml` after each successful change.
 
 ## Command Reference
 ### Run application

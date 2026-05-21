@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,6 +57,36 @@ class TestAppLogging(unittest.TestCase):
 
             logfile = self._current_log_file(tmp)
             self.assertFalse(logfile.exists())
+
+    def test_setup_logging_closes_existing_handlers(self):
+        logger = logging.getLogger(app_logging.LOGGER_NAME)
+
+        class _DummyHandler(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.closed_called = False
+
+            def emit(self, record):
+                return None
+
+            def close(self):
+                self.closed_called = True
+                super().close()
+
+        dummy_handler = _DummyHandler()
+        logger.addHandler(dummy_handler)
+
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                cfg = self._build_config(tmp, True, "info")
+                app_logging.setup_logging(cfg)
+
+            self.assertTrue(dummy_handler.closed_called)
+            self.assertNotIn(dummy_handler, logger.handlers)
+        finally:
+            for handler in list(logger.handlers):
+                handler.close()
+                logger.removeHandler(handler)
 
 
 if __name__ == "__main__":
