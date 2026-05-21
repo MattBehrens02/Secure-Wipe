@@ -26,6 +26,8 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 - ✅ Report generation (JSON + text) with detail-level controls
 - ✅ Git-based upload queue with retry/backoff and local retention semantics
 - ✅ Daily file logging and centralized terminal command runner utilities
+- ✅ In-app report viewing submenu with pagination and keyboard navigation (`R` return, `N` next page, `P` previous page)
+- ✅ In-app configuration submenu for controlled runtime toggle updates with persisted settings
 - ✅ Comprehensive unit test suite (`unittest`, mocked destructive operations)
 
 ## What's Next
@@ -35,6 +37,19 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 2. Expand integration and fault-injection scenarios (timeouts, partial failures, network issues)
 3. Perform controlled non-dry-run validation on approved hardware
 4. Finalize operator documentation and known-limits documentation
+
+## Menu Navigation
+
+Top-level actions now include:
+- Start Job
+- Restart Pending Jobs
+- View Reports
+- Configuration
+
+Submenu behavior:
+- `R` returns to main menu
+- Report viewer shows up to 20 entries per page
+- Report viewer supports `N` and `P` for page navigation
 
 ## Project Overview
 
@@ -329,6 +344,11 @@ git config --global user.email "your_email@example.com"
 - No GUI is provided; operation is terminal-driven by design.
 - Parallel drive wiping is intentionally out of scope.
 - Dedicated operator maintenance commands for stale lock/state cleanup are not yet implemented.
+
+## Runtime Path Notes
+
+- In `dev`, default paths are `/app/...` and are intended for container execution.
+- In `prod`, runtime directories are remapped to repository-local paths (`logs`, `reports`, `state`, `tmp`) so host execution is supported.
 
 ## Troubleshooting
 
