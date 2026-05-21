@@ -11,6 +11,7 @@ MENU_OPTIONS = [
     "Restart Pending Jobs",
 	"View Reports",
 	"Configuration",
+    "Maintenance",
 ]
 
 def print_line():
@@ -98,7 +99,7 @@ def run():
             decided = True
             return -1
 
-        elif option in {"1", "2", "3", "4"}:
+        elif option in {"1", "2", "3", "4", "5"}:
             decided = True
             return int(option)
 

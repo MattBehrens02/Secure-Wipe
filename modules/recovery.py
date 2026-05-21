@@ -292,6 +292,18 @@ def list_incomplete_states(state_dir: str | Path) -> list[RecoveryState]:
     return incomplete
 
 
+def clear_incomplete_states(state_dir: str | Path) -> int:
+    """Delete all non-completed recovery states and return deletion count."""
+    deleted_count = 0
+    for state in list_incomplete_states(state_dir):
+        drive_serial = None
+        if isinstance(getattr(state, "metadata", None), dict):
+            drive_serial = str(state.metadata.get("drive_serial", "") or "").strip() or None
+        if clear_state(state_dir, state.drive_path, drive_serial=drive_serial):
+            deleted_count += 1
+    return deleted_count
+
+
 def should_offer_resume(
     state: RecoveryState,
     max_age_seconds: int = DEFAULT_RESUME_MAX_AGE_SECONDS,
@@ -368,6 +380,27 @@ def _is_lock_stale(lock_path: Path, stale_after_seconds: int) -> bool:
 
     age_seconds = (datetime.now(timezone.utc) - created_at).total_seconds()
     return age_seconds > stale_after_seconds
+
+
+def clear_stale_lock(
+    lock_file_path: str | Path,
+    stale_after_seconds: int = DEFAULT_LOCK_STALE_SECONDS,
+) -> tuple[bool, str]:
+    """Remove lock file only when stale; returns (cleared, message)."""
+    lock_path = Path(lock_file_path)
+
+    if not lock_path.exists():
+        return False, f"No lock file found at {lock_path}"
+
+    if not _is_lock_stale(lock_path, stale_after_seconds):
+        return False, f"Lock file at {lock_path} is active and not stale"
+
+    try:
+        lock_path.unlink(missing_ok=True)
+    except OSError as exc:
+        return False, f"Failed to clear stale lock {lock_path}: {exc}"
+
+    return True, f"Cleared stale lock at {lock_path}"
 
 
 def release_lock(lock_file_path: str | Path) -> None:

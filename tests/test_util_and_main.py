@@ -386,6 +386,43 @@ class TestUtilitiesAndMain(unittest.TestCase):
         self.assertFalse(cfg.runtime.dry_run)
         mock_save_config.assert_called_once()
 
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[5, -1])
+    @patch("main.recovery.clear_stale_lock", return_value=(True, "Cleared stale lock"))
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["1", "CLEAR", "r"])
+    def test_main_maintenance_menu_clears_stale_lock(
+        self,
+        _mock_input,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_clear_stale_lock,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            upload=SimpleNamespace(enabled=False),
+            drive_detection=SimpleNamespace(collect_smart_info=True),
+            logging=SimpleNamespace(level="info"),
+            reporting=SimpleNamespace(detail_level="verbose"),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        rc = main.main(interactive=True)
+
+        self.assertEqual(rc, 0)
+        mock_clear_stale_lock.assert_called_once_with("/tmp/state/wipe.lock", stale_after_seconds=7200)
+
 
 if __name__ == "__main__":
     unittest.main()

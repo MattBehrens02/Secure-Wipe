@@ -41,13 +41,7 @@ def _recovery_settings(app_config):
 
 
 def _clear_incomplete_states(state_dir: str) -> int:
-	incomplete_states = recovery.list_incomplete_states(state_dir)
-	for state in incomplete_states:
-		drive_serial = None
-		if isinstance(getattr(state, "metadata", None), dict):
-			drive_serial = str(state.metadata.get("drive_serial", "") or "").strip() or None
-		recovery.clear_state(state_dir, state.drive_path, drive_serial=drive_serial)
-	return len(incomplete_states)
+	return recovery.clear_incomplete_states(state_dir)
 
 
 def _pending_states(app_config) -> list[recovery.RecoveryState]:
@@ -247,6 +241,52 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			app_logging.log_error(f"Failed to persist configuration changes: {exc}")
 
 
+def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
+	state_dir, lock_file_path, lock_stale_seconds, _, _ = _recovery_settings(app_config)
+
+	choices = [
+		f"Clear stale recovery lock ({lock_file_path})",
+		f"Clear all incomplete recovery states ({state_dir})",
+	]
+
+	while True:
+		_print_submenu("Maintenance", choices, "Enter number or R to return")
+
+		if not terminal_ui.interactive:
+			selected_index = 0
+		else:
+			user_input = input("Select maintenance action: ").strip()
+			if user_input.lower() == "r":
+				app_logging.log_info("User returned to main menu from maintenance menu")
+				return
+			if not user_input.isdigit():
+				print("Invalid selection. Enter a number or R.")
+				continue
+			selected_index = int(user_input) - 1
+			if selected_index < 0 or selected_index >= len(choices):
+				print("Invalid selection. Enter a listed number or R.")
+				continue
+
+		confirmation = "CLEAR" if terminal_ui.interactive else "CLEAR"
+		if terminal_ui.interactive:
+			confirmation = input("Type CLEAR to confirm maintenance action (or anything else to cancel): ").strip()
+		if confirmation != "CLEAR":
+			print("Maintenance action cancelled.")
+			continue
+
+		if selected_index == 0:
+			cleared, message = recovery.clear_stale_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
+			print(message)
+			if cleared:
+				app_logging.log_info(f"Maintenance cleared stale lock path={lock_file_path}")
+			else:
+				app_logging.log_error(f"Maintenance stale lock clear skipped path={lock_file_path} reason={message}")
+		elif selected_index == 1:
+			cleared_count = _clear_incomplete_states(state_dir)
+			print(f"Cleared {cleared_count} incomplete recovery state(s).")
+			app_logging.log_info(f"Maintenance cleared {cleared_count} incomplete recovery state(s)")
+
+
 def main(interactive: bool = False) -> int:
 	try:
 		app_config = config.load_config()
@@ -272,7 +312,7 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3, 4}:
+				if menu_choice not in {1, 2, 3, 4, 5}:
 					print("Invalid menu selection.")
 					return 1
 
@@ -284,6 +324,12 @@ def main(interactive: bool = False) -> int:
 
 				if menu_choice == 4:
 					app_config = _configure_settings(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
+
+				if menu_choice == 5:
+					_maintenance_menu(app_config, terminal_ui)
 					if interactive_menu:
 						continue
 					return 0

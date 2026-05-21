@@ -7,6 +7,8 @@ from pathlib import Path
 from modules.recovery import (
     RecoveryState,
     acquire_lock,
+    clear_incomplete_states,
+    clear_stale_lock,
     clear_state,
     list_incomplete_states,
     load_state,
@@ -161,6 +163,56 @@ class TestRecoveryLocking(unittest.TestCase):
 
             self.assertTrue(acquired)
             self.assertIsNone(error)
+
+    def test_clear_stale_lock_removes_only_stale_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "wipe.lock"
+            stale_payload = {
+                "pid": 1,
+                "hostname": "host",
+                "created_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+                "app_name": "Secure Wipe",
+                "app_version": "0.1.0",
+            }
+            lock_path.write_text(json.dumps(stale_payload), encoding="utf-8")
+
+            cleared, message = clear_stale_lock(lock_path, stale_after_seconds=1800)
+
+            self.assertTrue(cleared)
+            self.assertIn("Cleared stale lock", message)
+            self.assertFalse(lock_path.exists())
+
+    def test_clear_stale_lock_does_not_remove_active_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "wipe.lock"
+            payload = {
+                "pid": 1,
+                "hostname": "host",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "app_name": "Secure Wipe",
+                "app_version": "0.1.0",
+            }
+            lock_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            cleared, message = clear_stale_lock(lock_path, stale_after_seconds=3600)
+
+            self.assertFalse(cleared)
+            self.assertIn("not stale", message)
+            self.assertTrue(lock_path.exists())
+
+
+class TestRecoveryMaintenance(unittest.TestCase):
+    def test_clear_incomplete_states_removes_non_completed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_state(tmp, RecoveryState(drive_path="/dev/sda", status="interrupted"))
+            save_state(tmp, RecoveryState(drive_path="/dev/sdb", status="failed"))
+            save_state(tmp, RecoveryState(drive_path="/dev/sdc", status="completed"))
+
+            deleted = clear_incomplete_states(tmp)
+            remaining = {state.drive_path for state in list_incomplete_states(tmp)}
+
+            self.assertEqual(deleted, 2)
+            self.assertEqual(remaining, set())
 
 
 if __name__ == "__main__":
