@@ -24,10 +24,12 @@ class TestUtilitiesAndMain(unittest.TestCase):
                     reports_dir=f"{tmp}/reports",
                     state_dir=f"{tmp}/state",
                     temp_dir=f"{tmp}/tmp",
+                    output_root=f"{tmp}/output",
                 )
             )
             dir_check.ensure_runtime_directories(cfg)
 
+            self.assertTrue((__import__("pathlib").Path(cfg.paths.output_root)).exists())
             self.assertTrue((__import__("pathlib").Path(cfg.paths.logs_dir)).exists())
             self.assertTrue((__import__("pathlib").Path(cfg.paths.reports_dir)).exists())
             self.assertTrue((__import__("pathlib").Path(cfg.paths.state_dir)).exists())
