@@ -192,6 +192,80 @@ class GitUploader:
         return False
 
 
+def _resolve_upload_paths(app_config: Any) -> tuple[Path, Path, Path]:
+    """Resolve reports dir, queue file path, and local upload repo path from config."""
+    paths_cfg = getattr(app_config, "paths", object())
+    reports_dir = Path(getattr(paths_cfg, "reports_dir", "./reports"))
+
+    state_dir_value = getattr(paths_cfg, "state_dir", None)
+    if state_dir_value:
+        state_dir = Path(state_dir_value)
+    else:
+        state_dir = reports_dir.parent / "state"
+
+    queue_file = state_dir / ".upload_queue"
+    repo_path = state_dir / ".upload_repo"
+    return reports_dir, queue_file, repo_path
+
+
+def _push_pending_queue(queue: UploadQueue, uploader: GitUploader, max_retries: int) -> bool:
+    """Push all queued reports and clear successful entries."""
+    pending = queue.list_pending()
+    if not pending:
+        log_info("No pending reports to upload")
+        return True
+
+    try:
+        uploader.ensure_repo_initialized()
+    except UploadError as exc:
+        log_error(f"Failed to initialize repository: {exc}")
+        return False
+
+    timestamp = int(time.time())
+    commit_message = f"Upload {len(pending)} report(s) [timestamp: {timestamp}]"
+    if not uploader.stage_and_commit(pending, commit_message):
+        log_error("Failed to stage/commit reports; upload aborted")
+        return False
+
+    if uploader.push_to_remote(max_retries=max_retries):
+        for report_path in pending:
+            queue.mark_uploaded(report_path)
+        log_info(f"Successfully uploaded {len(pending)} report(s)")
+        return True
+
+    log_error("Failed to push reports; retaining locally for next attempt")
+    return False
+
+
+def flush_pending_reports(app_config: Any, dry_run: bool = False) -> bool:
+    """Attempt to upload any reports already present in the local queue."""
+    upload_cfg = getattr(app_config, "upload", object())
+    if not getattr(upload_cfg, "enabled", False):
+        return True
+
+    repo_url = getattr(upload_cfg, "repo", None)
+    if not repo_url:
+        log_error("Upload is enabled but no repository URL configured")
+        return False
+
+    if dry_run:
+        log_info(f"[DRY RUN] Would flush queued reports to: {repo_url}")
+        return True
+
+    reports_dir, queue_file, repo_path = _resolve_upload_paths(app_config)
+    queue = UploadQueue(reports_dir=reports_dir, queue_file=queue_file)
+    branch = getattr(upload_cfg, "branch", "main")
+    retry_count = int(getattr(upload_cfg, "retry_count", 3))
+
+    try:
+        uploader = GitUploader(repo_url, repo_path, branch=branch)
+    except UploadError as exc:
+        log_error(f"Failed to initialize uploader: {exc}")
+        return False
+
+    return _push_pending_queue(queue, uploader, max_retries=max(1, retry_count))
+
+
 def upload_reports(
     report_json_path: Path,
     report_text_path: Path,
@@ -226,8 +300,7 @@ def upload_reports(
         return True
 
     # Initialize upload queue
-    reports_dir = Path(getattr(getattr(app_config, "paths", object()), "reports_dir", "./reports"))
-    queue_file = reports_dir.parent / "state" / ".upload_queue"
+    reports_dir, queue_file, repo_path = _resolve_upload_paths(app_config)
     queue = UploadQueue(reports_dir=reports_dir, queue_file=queue_file)
 
     # Add new reports to queue
@@ -235,8 +308,8 @@ def upload_reports(
     queue.add_pending(report_text_path)
 
     # Initialize git uploader
-    repo_path = reports_dir.parent / ".upload_repo"
     branch = getattr(upload_cfg, "branch", "main")
+    retry_count = int(getattr(upload_cfg, "retry_count", 3))
 
     try:
         uploader = GitUploader(repo_url, repo_path, branch=branch)
@@ -244,32 +317,4 @@ def upload_reports(
         log_error(f"Failed to initialize uploader: {exc}")
         return False
 
-    # Process all pending reports
-    pending = queue.list_pending()
-    if not pending:
-        log_info("No pending reports to upload")
-        return True
-
-    try:
-        uploader.ensure_repo_initialized()
-    except UploadError as exc:
-        log_error(f"Failed to initialize repository: {exc}")
-        return False
-
-    # Stage and commit all pending reports
-    timestamp = int(time.time())
-    commit_message = f"Upload {len(pending)} report(s) [timestamp: {timestamp}]"
-
-    if not uploader.stage_and_commit(pending, commit_message):
-        log_error("Failed to stage/commit reports; upload aborted")
-        return False
-
-    # Attempt to push; if successful, mark all as uploaded
-    if uploader.push_to_remote(max_retries=3):
-        for report_path in pending:
-            queue.mark_uploaded(report_path)
-        log_info(f"Successfully uploaded {len(pending)} report(s)")
-        return True
-    else:
-        log_error("Failed to push reports; retaining locally for next attempt")
-        return False
+    return _push_pending_queue(queue, uploader, max_retries=max(1, retry_count))

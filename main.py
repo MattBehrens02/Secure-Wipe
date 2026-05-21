@@ -297,6 +297,7 @@ def main(interactive: bool = False) -> int:
 	terminal_ui = TerminalUI.from_config(app_config)
 	interactive_menu = interactive and sys.stdin.isatty()
 	state_dir, lock_file_path, lock_stale_seconds, _resume_max_age_seconds, _allow_failed_resume = _recovery_settings(app_config)
+	startup_upload_flushed = False
 
 	terminal_ui.enter_alt_screen()
 	try:
@@ -365,6 +366,16 @@ def main(interactive: bool = False) -> int:
 
 			dir_check.ensure_runtime_directories(app_config)
 			app_logging.setup_logging(app_config)
+
+			if not startup_upload_flushed:
+				startup_upload_flushed = True
+				flushed = uploader.flush_pending_reports(
+					app_config,
+					dry_run=app_config.runtime.dry_run,
+				)
+				if not flushed:
+					print("Warning: pending report upload flush failed; queued reports will be retried later.")
+					app_logging.log_error("Startup pending report flush failed")
 
 			lock_acquired, lock_error = recovery.acquire_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
 			if not lock_acquired:

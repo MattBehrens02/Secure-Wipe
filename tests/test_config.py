@@ -94,6 +94,31 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.paths.project_root, str(project_root))
         self.assertEqual(cfg.paths.logs_dir, str(project_root / "logs"))
 
+    def test_prod_environment_uses_output_root_for_persistent_paths(self):
+        with tempfile.TemporaryDirectory() as out:
+            toml_text = textwrap.dedent(
+                f"""
+                [paths]
+                output_root = "{out}"
+
+                [runtime]
+                environment = "prod"
+                """
+            )
+
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml") as tmp:
+                tmp.write(toml_text)
+                tmp_path = tmp.name
+
+            cfg = config.load_config(tmp_path)
+            project_root = Path(config.__file__).resolve().parent.parent
+
+            self.assertEqual(cfg.paths.logs_dir, str(Path(out) / "logs"))
+            self.assertEqual(cfg.paths.reports_dir, str(Path(out) / "reports"))
+            self.assertEqual(cfg.paths.state_dir, str(Path(out) / "state"))
+            self.assertEqual(cfg.paths.temp_dir, str(project_root / "tmp"))
+            self.assertEqual(cfg.recovery.lock_file_path, str(Path(out) / "state" / "wipe.lock"))
+
     def test_save_user_config_roundtrip(self):
         cfg = config.AppConfig()
         cfg.runtime.environment = "test"

@@ -12,6 +12,7 @@ class PathsConfig:
     reports_dir: str = "/app/reports"
     state_dir: str = "/app/state"
     temp_dir: str = "/app/tmp"
+    output_root: Optional[str] = None
 
 @dataclass
 class RuntimeConfig:
@@ -77,6 +78,7 @@ class AppConfig:
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configuration.toml"
 
 _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
+    "paths": {"output_root"},
     "runtime": {"environment", "dry_run"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
@@ -92,6 +94,12 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "upload": {"enabled", "repo", "branch", "retry_count"},
     "logging": {"enabled", "level"},
 }
+
+
+def _apply_paths_overrides(config: AppConfig, paths_data: dict[str, Any]) -> None:
+    if "output_root" in paths_data:
+        output_root = str(paths_data["output_root"]).strip()
+        config.paths.output_root = output_root or None
 
 
 def _apply_runtime_overrides(config: AppConfig, runtime_data: dict[str, Any]) -> None:
@@ -243,6 +251,9 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
 
         _reject_unknown_toml_keys(raw_data)
 
+        paths_data = raw_data.get("paths", {})
+        _apply_paths_overrides(config, paths_data)
+
         runtime_data = raw_data.get("runtime", {})
         _apply_runtime_overrides(config, runtime_data)
 
@@ -267,13 +278,20 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
     _validate_config(config)
     if config.runtime.environment == "prod":
         _project_root = Path(__file__).resolve().parent.parent
+        output_root = Path(config.paths.output_root).expanduser() if config.paths.output_root else None
+        data_root = output_root if output_root else _project_root
+
         config.paths.project_root = str(_project_root)
-        config.paths.logs_dir    = str(_project_root / "logs")
-        config.paths.reports_dir = str(_project_root / "reports")
-        config.paths.state_dir   = str(_project_root / "state")
+        config.paths.logs_dir    = str(data_root / "logs")
+        config.paths.reports_dir = str(data_root / "reports")
+        config.paths.state_dir   = str(data_root / "state")
         config.paths.temp_dir    = str(_project_root / "tmp")
-        if config.recovery.lock_file_path == "/app/state/wipe.lock":
-            config.recovery.lock_file_path = str(_project_root / "state" / "wipe.lock")
+        default_lock_paths = {
+            "/app/state/wipe.lock",
+            str(_project_root / "state" / "wipe.lock"),
+        }
+        if config.recovery.lock_file_path in default_lock_paths:
+            config.recovery.lock_file_path = str(data_root / "state" / "wipe.lock")
 
 
     return config
@@ -298,6 +316,9 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
     Only values from the curated, whitelisted subset are persisted.
     """
     return {
+        "paths": {
+            "output_root": config.paths.output_root or "",
+        },
         "runtime": {
             "environment": config.runtime.environment,
             "dry_run": config.runtime.dry_run,
@@ -342,6 +363,7 @@ def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None
 
     lines: list[str] = []
     ordered_tables = [
+        "paths",
         "runtime",
         "safety",
         "drive_detection",

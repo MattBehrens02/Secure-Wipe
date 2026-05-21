@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
-from modules.uploader import GitUploader, UploadError, UploadQueue, upload_reports
+from modules.uploader import GitUploader, UploadError, UploadQueue, flush_pending_reports, upload_reports
 
 
 class TestUploadQueue(unittest.TestCase):
@@ -259,6 +259,68 @@ class TestUploadReports(unittest.TestCase):
         queue = UploadQueue(reports_dir=self.reports_dir, queue_file=self.state_dir / ".upload_queue")
         pending = queue.list_pending()
         self.assertGreater(len(pending), 0)
+
+    @patch("modules.uploader.GitUploader.push_to_remote", return_value=False)
+    @patch("modules.uploader.GitUploader.stage_and_commit", return_value=True)
+    @patch("modules.uploader.GitUploader.ensure_repo_initialized")
+    def test_upload_reports_uses_configured_state_dir_for_queue(self, _mock_init, _mock_stage, _mock_push):
+        custom_state_dir = Path(self.temp_dir) / "persistent-state"
+        custom_state_dir.mkdir(parents=True, exist_ok=True)
+
+        app_config = SimpleNamespace(
+            upload=SimpleNamespace(enabled=True, repo="git@github.com:test/repo.git", branch="main"),
+            paths=SimpleNamespace(reports_dir=str(self.reports_dir), state_dir=str(custom_state_dir)),
+        )
+
+        result = upload_reports(self.report_json, self.report_text, app_config, dry_run=False)
+
+        self.assertFalse(result)
+        queue = UploadQueue(reports_dir=self.reports_dir, queue_file=custom_state_dir / ".upload_queue")
+        self.assertGreater(len(queue.list_pending()), 0)
+
+
+class TestFlushPendingReports(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.reports_dir = Path(self.temp_dir) / "reports"
+        self.state_dir = Path(self.temp_dir) / "state"
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.report_json = self.reports_dir / "report.json"
+        self.report_text = self.reports_dir / "report.txt"
+        self.report_json.write_text('{"test": true}')
+        self.report_text.write_text("Test report")
+
+    def test_flush_pending_reports_returns_true_when_disabled(self):
+        app_config = SimpleNamespace(
+            upload=SimpleNamespace(enabled=False),
+            paths=SimpleNamespace(reports_dir=str(self.reports_dir), state_dir=str(self.state_dir)),
+        )
+
+        self.assertTrue(flush_pending_reports(app_config, dry_run=False))
+
+    @patch("modules.uploader.GitUploader.push_to_remote", return_value=True)
+    @patch("modules.uploader.GitUploader.stage_and_commit", return_value=True)
+    @patch("modules.uploader.GitUploader.ensure_repo_initialized")
+    def test_flush_pending_reports_uploads_existing_queue(self, _mock_init, _mock_stage, _mock_push):
+        queue = UploadQueue(reports_dir=self.reports_dir, queue_file=self.state_dir / ".upload_queue")
+        queue.add_pending(self.report_json)
+        queue.add_pending(self.report_text)
+
+        app_config = SimpleNamespace(
+            upload=SimpleNamespace(
+                enabled=True,
+                repo="git@github.com:test/repo.git",
+                branch="main",
+                retry_count=4,
+            ),
+            paths=SimpleNamespace(reports_dir=str(self.reports_dir), state_dir=str(self.state_dir)),
+        )
+
+        result = flush_pending_reports(app_config, dry_run=False)
+
+        self.assertTrue(result)
+        self.assertEqual(len(queue.list_pending()), 0)
 
 
 if __name__ == "__main__":
