@@ -6,7 +6,9 @@ All methods are static and return a list of arguments for safe use with subproce
 
 
 import subprocess
+import time
 from dataclasses import dataclass
+from typing import Callable
 from typing import Any
 
 
@@ -27,32 +29,57 @@ class CommandResult:
     stderr: str
 
 
-def run_command(args: list[str], timeout: int | None = None, check: bool = False) -> CommandResult:
+def run_command(
+    args: list[str],
+    timeout: int | None = None,
+    check: bool = False,
+    progress_callback: Callable[[float], None] | None = None,
+) -> CommandResult:
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             args,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            timeout=timeout,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise CommandRunnerTimeout(f"command timed out: {' '.join(args)}") from exc
     except OSError as exc:
         raise CommandRunnerError(f"failed to execute {' '.join(args)}: {exc}") from exc
 
-    if check and completed.returncode != 0:
-        stderr = (completed.stderr or "").strip()
-        message = f"command failed with exit code {completed.returncode}: {' '.join(args)}"
-        if stderr:
-            message = f"{message}: {stderr}"
+    start_time = time.monotonic()
+    last_progress_emit = start_time
+
+    while process.poll() is None:
+        now = time.monotonic()
+        elapsed = now - start_time
+
+        if timeout is not None and elapsed > timeout:
+            process.kill()
+            process.communicate()
+            raise CommandRunnerTimeout(f"command timed out: {' '.join(args)}")
+
+        if progress_callback is not None and (now - last_progress_emit) >= 1.0:
+            try:
+                progress_callback(elapsed)
+            except Exception:
+                pass
+            last_progress_emit = now
+
+        time.sleep(0.2)
+
+    stdout, stderr = process.communicate()
+
+    if check and process.returncode != 0:
+        cleaned_stderr = (stderr or "").strip()
+        message = f"command failed with exit code {process.returncode}: {' '.join(args)}"
+        if cleaned_stderr:
+            message = f"{message}: {cleaned_stderr}"
         raise CommandRunnerError(message)
 
     return CommandResult(
         args=list(args),
-        returncode=completed.returncode,
-        stdout=completed.stdout or "",
-        stderr=(completed.stderr or "").strip(),
+        returncode=process.returncode,
+        stdout=stdout or "",
+        stderr=(stderr or "").strip(),
     )
 
 

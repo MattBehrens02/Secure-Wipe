@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+import sys
 import time
 import uuid
 
@@ -11,6 +12,70 @@ from modules.terminal import WipeCommands, run_command
 def _humanize_step_name(step_name: str) -> str:
     """Convert snake_case step names to Title Case for display."""
     return " ".join(word.capitalize() for word in step_name.split("_"))
+
+
+def _format_seconds(seconds: float | None) -> str:
+    if seconds is None:
+        return "unknown"
+    seconds = max(0.0, float(seconds))
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    if minutes > 0:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _clean_info_label(info_message: str) -> str:
+    label = info_message.strip()
+    if label.startswith("[INFO]"):
+        label = label[len("[INFO]") :].strip()
+    if label.endswith("..."):
+        label = label[:-3].strip()
+    return label
+
+
+def _spinner_frame(elapsed_seconds: float) -> str:
+    frames = ["|", "/", "-", "\\"]
+    frame_idx = int(max(0.0, elapsed_seconds) / 0.25) % len(frames)
+    return frames[frame_idx]
+
+
+def _build_progress_line(
+    *,
+    step_index: int,
+    step_total: int,
+    step_label: str,
+    elapsed_step: float,
+    overall_elapsed: float,
+    eta_hint: float | None,
+    bar_width: int = 20,
+) -> str:
+    ratio = None
+    if eta_hint is not None:
+        total_estimate = elapsed_step + max(0.0, eta_hint)
+        if total_estimate > 0:
+            ratio = min(0.999, max(0.0, elapsed_step / total_estimate))
+
+    if ratio is None:
+        spinner = _spinner_frame(elapsed_step)
+        bar = "[" + ("." * bar_width) + "]"
+        pct_text = " --%"
+        activity = f"{spinner} running"
+    else:
+        filled = int(ratio * bar_width)
+        bar = "[" + ("#" * filled) + ("-" * (bar_width - filled)) + "]"
+        pct_text = f" {int(ratio * 100):>3}%"
+        activity = "running"
+
+    return (
+        f"Step {step_index}/{step_total} {step_label} "
+        f"{bar}{pct_text} {activity} "
+        f"step {_format_seconds(elapsed_step)} "
+        f"total {_format_seconds(overall_elapsed)} "
+        f"ETA {_format_seconds(eta_hint)}"
+    )
 
 
 class WipeEngine:
@@ -35,6 +100,14 @@ class WipeEngine:
         self.keyfile = "/tmp/securewipe.key"
         # Device-mapper name used when opening the LUKS container.
         self.mapping_name = f"wipe_{self.path.split('/')[-1]}"
+        self._overall_start_perf = 0.0
+        self._avg_step_seconds: float | None = None
+        self._remaining_steps_after_current = 0
+        self._step_progress_emit_interval = 15.0
+        self._last_step_progress_emit = 0.0
+        self._current_step_index = 0
+        self._current_step_total = 0
+        self._current_step_label = ""
 
     def execute(self):
         """Run the full wipe sequence and return a high-level status result."""
@@ -119,6 +192,7 @@ class WipeEngine:
         """Run the wipe sequence with optional recovery checkpoint integration."""
         started_at = datetime.now(timezone.utc).isoformat()
         total_start_perf = time.perf_counter()
+        self._overall_start_perf = total_start_perf
         failed_step = None
         error_message = None
         mapping_open = False
@@ -173,6 +247,27 @@ class WipeEngine:
             for idx, (step_name, step_func) in enumerate(steps):
                 if idx < resume_from_index:
                     continue
+
+                completed_step_count = len(step_durations_seconds)
+                self._avg_step_seconds = (
+                    (sum(step_durations_seconds.values()) / completed_step_count)
+                    if completed_step_count > 0
+                    else None
+                )
+                self._remaining_steps_after_current = max(0, len(steps) - (idx + 1))
+                eta_hint = None
+                if self._avg_step_seconds is not None:
+                    eta_hint = self._avg_step_seconds * (self._remaining_steps_after_current + 1)
+
+                self._current_step_index = idx + 1
+                self._current_step_total = len(steps)
+                self._current_step_label = _humanize_step_name(step_name)
+
+                print(
+                    f"[PROGRESS] Step {idx + 1}/{len(steps)}: {_humanize_step_name(step_name)} "
+                    f"(elapsed={_format_seconds(time.perf_counter() - total_start_perf)}, "
+                    f"est_remaining={_format_seconds(eta_hint)})"
+                )
 
                 failed_step = step_name
                 if use_recovery:
@@ -274,7 +369,42 @@ class WipeEngine:
 
         print(info_message)
         log_info(f"run_command drive={self.path} cmd={' '.join(cmd)}")
-        run_command(cmd, check=True)
+
+        self._last_step_progress_emit = 0.0
+        rendered_progress = False
+
+        def _emit_progress(elapsed_step: float) -> None:
+            nonlocal rendered_progress
+            if elapsed_step - self._last_step_progress_emit < self._step_progress_emit_interval:
+                return
+
+            self._last_step_progress_emit = elapsed_step
+            overall_elapsed = time.perf_counter() - self._overall_start_perf
+
+            eta_hint = None
+            if self._avg_step_seconds is not None:
+                remaining_current = max(0.0, self._avg_step_seconds - elapsed_step)
+                eta_hint = remaining_current + (self._avg_step_seconds * self._remaining_steps_after_current)
+
+            line = _build_progress_line(
+                step_index=self._current_step_index,
+                step_total=self._current_step_total,
+                step_label=self._current_step_label or _clean_info_label(info_message),
+                elapsed_step=elapsed_step,
+                overall_elapsed=overall_elapsed,
+                eta_hint=eta_hint,
+            )
+
+            sys.stdout.write("\r" + line.ljust(140))
+            sys.stdout.flush()
+            rendered_progress = True
+
+        try:
+            run_command(cmd, check=True, progress_callback=_emit_progress)
+        finally:
+            if rendered_progress:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
 
     def _generate_temporary_key(self):
         """Create random key material used to format/open a temporary LUKS container."""
