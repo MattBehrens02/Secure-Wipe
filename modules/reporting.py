@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from modules.version import AppVersion
+from modules.time_utils import now_for_output_names
 
 VERSION = AppVersion()
 
@@ -501,6 +502,7 @@ def save_wipe_report(
 	report: WipeReport,
 	reports_dir: str | Path = "./reports",
 	detail_level: str = "verbose",
+	app_config: Optional[Any] = None,
 ) -> tuple[Path, Path]:
 	"""Save wipe report as JSON and text files.
 	
@@ -511,7 +513,10 @@ def save_wipe_report(
 	reports_path.mkdir(parents=True, exist_ok=True)
 	
 	# Generate filename: YYYYMMDDTHHMM-device-serial.{json,txt}
-	timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
+	if app_config is not None:
+		timestamp_str = now_for_output_names(app_config).strftime("%Y%m%dT%H%M")
+	else:
+		timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
 	device_name = Path(report.drive_path).name if report.drive_path else "unknown"
 	serial = report.drive_serial if report.drive_serial else "unknown"
 	safe_serial = "".join(c if c.isalnum() else "_" for c in serial)
@@ -550,12 +555,16 @@ def build_detection_report(app_config: Any, selected_drives: list[Any]) -> dict[
 	}
 
 
-def write_json_report(report_data: dict[str, Any], reports_dir: str) -> Path:
+def write_json_report(report_data: dict[str, Any], reports_dir: str, app_config: Optional[Any] = None) -> Path:
 	"""Persist a report dictionary as JSON and return the output path."""
 	output_dir = Path(reports_dir)
 	output_dir.mkdir(parents=True, exist_ok=True)
 
-	filename = f"detection_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
+	if app_config is not None:
+		timestamp = now_for_output_names(app_config)
+	else:
+		timestamp = datetime.now(timezone.utc)
+	filename = f"detection_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
 	output_path = output_dir / filename
 
 	with output_path.open("w", encoding="utf-8") as report_file:
@@ -567,7 +576,7 @@ def write_json_report(report_data: dict[str, Any], reports_dir: str) -> Path:
 def generate_detection_json_report(app_config: Any, selected_drives: list[Any]) -> Path:
 	"""Build and write a basic JSON report for selected drives."""
 	report_data = build_detection_report(app_config, selected_drives)
-	return write_json_report(report_data, app_config.paths.reports_dir)
+	return write_json_report(report_data, app_config.paths.reports_dir, app_config=app_config)
 
 
 def list_saved_reports(

@@ -18,6 +18,7 @@ class PathsConfig:
 class RuntimeConfig:
     environment: str = "dev"  # dev, test, prod
     dry_run: bool = True
+    timezone: str = "UTC"  # UTC | local | IANA zone (e.g., America/Chicago)
 
 @dataclass
 class SafetyConfig:
@@ -79,7 +80,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configuration.to
 
 _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "paths": {"output_root"},
-    "runtime": {"environment", "dry_run"},
+    "runtime": {"environment", "dry_run", "timezone"},
     "safety": {"removable_drive_mode", "mount_handling_mode", "confirmation_steps"},
     "drive_detection": {"collect_smart_info"},
     "recovery": {
@@ -96,6 +97,41 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
 }
 
 
+def _config_path_on_output_root(output_root: str) -> Path:
+    return Path(output_root).expanduser() / DEFAULT_CONFIG_PATH.name
+
+
+def _apply_overrides_from_raw_data(config: AppConfig, raw_data: dict[str, Any]) -> None:
+    if not isinstance(raw_data, dict):
+        raise ValueError("configuration.toml must contain top-level tables")
+
+    _reject_unknown_toml_keys(raw_data)
+
+    paths_data = raw_data.get("paths", {})
+    _apply_paths_overrides(config, paths_data)
+
+    runtime_data = raw_data.get("runtime", {})
+    _apply_runtime_overrides(config, runtime_data)
+
+    safety_data = raw_data.get("safety", {})
+    _apply_safety_overrides(config, safety_data)
+
+    drive_detection_data = raw_data.get("drive_detection", {})
+    _apply_drive_detection_overrides(config, drive_detection_data)
+
+    recovery_data = raw_data.get("recovery", {})
+    _apply_recovery_overrides(config, recovery_data)
+
+    reporting_data = raw_data.get("reporting", {})
+    _apply_reporting_overrides(config, reporting_data)
+
+    upload_data = raw_data.get("upload", {})
+    _apply_upload_overrides(config, upload_data)
+
+    logging_data = raw_data.get("logging", {})
+    _apply_logging_overrides(config, logging_data)
+
+
 def _apply_paths_overrides(config: AppConfig, paths_data: dict[str, Any]) -> None:
     if "output_root" in paths_data:
         output_root = str(paths_data["output_root"]).strip()
@@ -107,6 +143,8 @@ def _apply_runtime_overrides(config: AppConfig, runtime_data: dict[str, Any]) ->
         config.runtime.environment = str(runtime_data["environment"])
     if "dry_run" in runtime_data:
         config.runtime.dry_run = bool(runtime_data["dry_run"])
+    if "timezone" in runtime_data:
+        config.runtime.timezone = str(runtime_data["timezone"])
 
 
 def _apply_safety_overrides(config: AppConfig, safety_data: dict[str, Any]) -> None:
@@ -186,6 +224,9 @@ def _validate_config(config: AppConfig) -> None:
     if config.runtime.environment not in {"dev", "test", "prod"}:
         raise ValueError("runtime.environment must be one of: dev, test, prod")
 
+    if not str(config.runtime.timezone).strip():
+        raise ValueError("runtime.timezone must be a non-empty string")
+
     valid_modes = {"deny", "allow"}
     if config.safety.removable_drive_mode not in valid_modes:
         raise ValueError("safety.removable_drive_mode must be one of: deny, allow")
@@ -245,35 +286,16 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
     if target_path.exists():
         with target_path.open("rb") as config_file:
             raw_data = tomllib.load(config_file)
+        _apply_overrides_from_raw_data(config, raw_data)
 
-        if not isinstance(raw_data, dict):
-            raise ValueError("configuration.toml must contain top-level tables")
-
-        _reject_unknown_toml_keys(raw_data)
-
-        paths_data = raw_data.get("paths", {})
-        _apply_paths_overrides(config, paths_data)
-
-        runtime_data = raw_data.get("runtime", {})
-        _apply_runtime_overrides(config, runtime_data)
-
-        safety_data = raw_data.get("safety", {})
-        _apply_safety_overrides(config, safety_data)
-
-        drive_detection_data = raw_data.get("drive_detection", {})
-        _apply_drive_detection_overrides(config, drive_detection_data)
-
-        recovery_data = raw_data.get("recovery", {})
-        _apply_recovery_overrides(config, recovery_data)
-
-        reporting_data = raw_data.get("reporting", {})
-        _apply_reporting_overrides(config, reporting_data)
-
-        upload_data = raw_data.get("upload", {})
-        _apply_upload_overrides(config, upload_data)
-
-        logging_data = raw_data.get("logging", {})
-        _apply_logging_overrides(config, logging_data)
+    # When no explicit config path is provided, allow a writable prod config on
+    # output_root to override defaults so operators can edit it externally.
+    if config_path is None and config.runtime.environment == "prod" and config.paths.output_root:
+        output_config_path = _config_path_on_output_root(config.paths.output_root)
+        if output_config_path.exists():
+            with output_config_path.open("rb") as config_file:
+                raw_data = tomllib.load(config_file)
+            _apply_overrides_from_raw_data(config, raw_data)
 
     _validate_config(config)
     if config.runtime.environment == "prod":
@@ -322,6 +344,7 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
         "runtime": {
             "environment": config.runtime.environment,
             "dry_run": config.runtime.dry_run,
+            "timezone": config.runtime.timezone,
         },
         "safety": {
             "removable_drive_mode": config.safety.removable_drive_mode,
@@ -358,7 +381,12 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
 
 def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None) -> Path:
     """Persist the whitelisted user-facing configuration as TOML."""
-    target_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    if config_path:
+        target_path = Path(config_path)
+    elif config.runtime.environment == "prod" and config.paths.output_root:
+        target_path = _config_path_on_output_root(config.paths.output_root)
+    else:
+        target_path = DEFAULT_CONFIG_PATH
     payload = _user_config_payload(config)
 
     lines: list[str] = []

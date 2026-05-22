@@ -81,6 +81,8 @@ def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] |
 
 	choices = [f"Resume {state.drive_path}" for state in resume_candidates_sorted]
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
 		_print_submenu("Pending Jobs", choices, "Enter number or R to return")
 		if not terminal_ui.interactive:
 			selected_index = 0
@@ -129,6 +131,8 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 	page_index = 0
 	page_count = max(1, (len(report_paths) + REPORTS_PAGE_SIZE - 1) // REPORTS_PAGE_SIZE)
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
 		start = page_index * REPORTS_PAGE_SIZE
 		end = start + REPORTS_PAGE_SIZE
 		page_reports = report_paths[start:end]
@@ -179,6 +183,8 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 
 def _configure_settings(app_config, terminal_ui: TerminalUI):
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
 		choices = [
 			f"Toggle Dry Run (currently: {'ON' if app_config.runtime.dry_run else 'OFF'})",
 			f"Toggle Upload Enabled (currently: {'ON' if app_config.upload.enabled else 'OFF'})",
@@ -250,6 +256,8 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 	]
 
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
 		_print_submenu("Maintenance", choices, "Enter number or R to return")
 
 		if not terminal_ui.interactive:
@@ -465,6 +473,7 @@ def main(interactive: bool = False) -> int:
 							report,
 							reports_dir,
 							detail_level=detail_level,
+							app_config=app_config,
 						)
 						print("\nWipe report saved:")
 						print(f"  JSON: {json_path}")

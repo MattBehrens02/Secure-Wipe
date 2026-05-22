@@ -8,6 +8,9 @@ from modules.smartctl import collect_smart_info
 from modules import header
 from modules.terminal import CommandRunnerError, CommandRunnerTimeout, TerminalUI, run_command
 
+
+DRIVE_MENU_WIDTH = 80
+
 class DriveDetectionError(Exception):
     pass
 
@@ -113,7 +116,7 @@ def run(app_config: Any = None, terminal_ui: TerminalUI | None = None):
     selectionLoop = True
     while selectionLoop:
 
-        selected_drives = get_user_input(formatted_drives, terminal_ui)
+        selected_drives = get_user_input(formatted_drives, terminal_ui, app_config)
         if not selected_drives:
             print("No drives selected. Exiting.")
             return []
@@ -209,26 +212,39 @@ def normalize_drives(fetched_drives: Any) -> list[Drive]:
     ]
 
 # Print a menu of available drives for user selection.
+def _menu_line() -> None:
+    print("+" + "-" * (DRIVE_MENU_WIDTH - 2) + "+")
+
+
+def _menu_row(text: str) -> None:
+    print("|" + text[: DRIVE_MENU_WIDTH - 2].ljust(DRIVE_MENU_WIDTH - 2) + "|")
+
+
 def print_menu_options(drives: list[Drive]) -> None:
     header.print_header()
-    print("\nAvailable Drives:\n")
-    menu_index = 0
+    print("\n")
+    _menu_line()
+    _menu_row(" Drive Selection ")
+    _menu_line()
 
-    print(f" {'Drive Name':<37} {'Path':<15} {'Size':>6} {'Media':<6} Type")
-    print("-" * 78)
-
-    # List drives with indices
-    for drive in drives:
-        menu_index += 1
-        menu_index_str = f"[{menu_index}]"
+    for menu_index, drive in enumerate(drives, start=1):
         drive_name = f"{drive.vendor} {drive.model}".strip() or "Unknown Drive"
-        print(
-            f" {menu_index_str:>4} {drive_name:<32} {drive.path:<15} {drive.size:>6} "
-            f"{drive.media_type:<6} ({'Removable' if drive.removable else 'Fixed'})"
-        )
+        drive_type = "Removable" if drive.removable else "Fixed"
+        label = f" [{menu_index}] {drive_name} | {drive.path} | {drive.size} | {drive.media_type} | {drive_type}"
+        _menu_row(label)
+
+    _menu_line()
+    _menu_row(" Enter drive number(s) separated by commas, or Q to quit")
+    _menu_line()
+
+
+def _is_prod(app_config: Any) -> bool:
+    if app_config is None:
+        return False
+    return getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod"
 
 # Prompts the user to select one or more drives from the menu and returns the selected Drive instances.
-def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI) -> list[Drive]:
+def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI, app_config: Any = None) -> list[Drive]:
     if not formatted_drives:
         print("No eligible disk drives detected.")
         return []
@@ -236,10 +252,11 @@ def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI) -> li
     valid_input = False
 
     while not valid_input:
-       
+        if _is_prod(app_config):
+            terminal_ui.clear()
+
         print_menu_options(formatted_drives)
-        print("\n\nEnter the number(s) corresponding to the drive(s) you want to wipe, separated by commas, or 'q' to quit.")
-        choice = input("Your choice: ").strip()
+        choice = input("Select drive(s): ").strip()
 
         if 'q' in choice.lower():
             print("Exiting.")
@@ -308,6 +325,41 @@ def _print_confirm_risk_banner(selected_drives: list[Drive]) -> None:
 
     print("\nDANGER: REMOVABLE OR MOUNTED DRIVES SELECTED - HIGH RISK OPERATION")
 
+
+def _render_confirmation_screen(selected_drives: list[Drive], steps: int) -> None:
+    _menu_line()
+    _menu_row(" Wipe Confirmation ")
+    _menu_line()
+
+    risky = [d for d in selected_drives if d.removable or _is_mounted(d)]
+    if risky:
+        _menu_row(" DANGER: Removable or mounted drives selected")
+        for drive in risky:
+            flags = []
+            if drive.removable:
+                flags.append("removable")
+            if _is_mounted(drive):
+                flags.append("mounted")
+            _menu_row(f" - {drive.path} ({', '.join(flags)})")
+        _menu_line()
+
+    if len(selected_drives) > 1:
+        _menu_row(" You have selected multiple drives for wiping")
+    else:
+        _menu_row(" You have selected one drive for wiping")
+    _menu_line()
+
+    for drive in selected_drives:
+        drive_type = "Removable" if drive.removable else "Fixed"
+        _menu_row(f" - {drive.path} | {drive.size} | {drive_type}")
+
+    _menu_line()
+    if steps >= 1:
+        _menu_row(" Step 1: confirm with [y/N]")
+    if steps >= 2:
+        _menu_row(" Step 2: type WIPE to continue")
+    _menu_line()
+
 # Ask the user for confirmation before proceeding with wiping the selected drives.
 # The number of confirmation steps is controlled by app_config.safety.confirmation_steps.
 def confirm_all_drives(selected_drives: list[Drive], app_config: Any, terminal_ui: TerminalUI) -> bool:
@@ -318,16 +370,7 @@ def confirm_all_drives(selected_drives: list[Drive], app_config: Any, terminal_u
     
     terminal_ui.clear()
 
-    _print_confirm_risk_banner(selected_drives)
-
-    if len(selected_drives) > 1:
-        print("\nWARNING: You have selected multiple drives")
-        print("\nYou have selected the following drives for wiping:")
-    else:
-        print("\nYou have selected the following drive for wiping:")
-
-    for drive in selected_drives:
-        print(f"- {drive.path} ({drive.size}, {'Removable' if drive.removable else 'Fixed'})")
+    _render_confirmation_screen(selected_drives, steps)
 
     if steps >= 1:
         first = input("\nProceed with wiping these drives? [y/N]: ").strip().lower()

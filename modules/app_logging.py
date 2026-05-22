@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from modules.time_utils import now_for_output_names
 
 
 LOGGER_NAME = "securewipe"
@@ -56,7 +56,7 @@ def setup_logging(app_config: Any) -> None:
     logs_dir = Path(getattr(paths_cfg, "logs_dir", "./logs"))
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    day_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day_stamp = now_for_output_names(app_config).strftime("%Y-%m-%d")
     logfile_path = logs_dir / f"{day_stamp}.log"
 
     handler = logging.FileHandler(logfile_path, mode="a", encoding="utf-8")

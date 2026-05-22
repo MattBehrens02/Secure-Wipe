@@ -3,6 +3,7 @@ from modules.config import load_config
 from modules import recovery
 from pathlib import Path
 from datetime import datetime, timezone
+import subprocess
 
 MENU_WIDTH = 80 # The width of the menu shell, feel free to adjust as needed
 
@@ -87,10 +88,17 @@ def print_menu():
     environment_info()
     print_options()
 
+
+def _clear_if_prod() -> None:
+    cfg = load_config()
+    if getattr(getattr(cfg, "runtime", object()), "environment", "dev") == "prod":
+        subprocess.run(["clear"], check=False)
+
 def run():
     decided = False
     
     while not decided:
+        _clear_if_prod()
         print_menu()
         option = input("  Select option: ")
 

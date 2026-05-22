@@ -8,6 +8,7 @@ output_root = "/output"  # Optional persistent mount root for prod mode (e.g., /
 [runtime]
 environment = "prod"   # dev | test | prod
 dry_run = true
+timezone = "America/Edmonton"     # UTC | local | IANA zone (e.g., America/Chicago)
 
 [safety]
 # Safety modes for mounted and removable drives.

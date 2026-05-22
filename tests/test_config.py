@@ -142,6 +142,74 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(loaded.upload.enabled)
         self.assertEqual(loaded.logging.level, "errors")
 
+    def test_load_config_prefers_output_root_config_in_prod(self):
+        with tempfile.TemporaryDirectory() as root_dir, tempfile.TemporaryDirectory() as output_dir:
+            local_config_path = Path(root_dir) / "configuration.toml"
+            local_config_path.write_text(
+                textwrap.dedent(
+                    f"""
+                    [paths]
+                    output_root = "{output_dir}"
+
+                    [runtime]
+                    environment = "prod"
+                    dry_run = true
+                    timezone = "UTC"
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            output_config_path = Path(output_dir) / "configuration.toml"
+            output_config_path.write_text(
+                textwrap.dedent(
+                    f"""
+                    [paths]
+                    output_root = "{output_dir}"
+
+                    [runtime]
+                    environment = "prod"
+                    dry_run = false
+                    timezone = "America/Edmonton"
+
+                    [logging]
+                    enabled = true
+                    level = "errors"
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            original_default = config.DEFAULT_CONFIG_PATH
+            try:
+                config.DEFAULT_CONFIG_PATH = local_config_path
+                cfg = config.load_config()
+            finally:
+                config.DEFAULT_CONFIG_PATH = original_default
+
+            self.assertFalse(cfg.runtime.dry_run)
+            self.assertEqual(cfg.runtime.timezone, "America/Edmonton")
+            self.assertEqual(cfg.logging.level, "errors")
+
+    def test_save_user_config_defaults_to_output_root_in_prod(self):
+        with tempfile.TemporaryDirectory() as output_dir, tempfile.TemporaryDirectory() as root_dir:
+            cfg = config.AppConfig()
+            cfg.runtime.environment = "prod"
+            cfg.paths.output_root = output_dir
+            cfg.runtime.timezone = "America/Edmonton"
+
+            original_default = config.DEFAULT_CONFIG_PATH
+            try:
+                config.DEFAULT_CONFIG_PATH = Path(root_dir) / "configuration.toml"
+                output_path = config.save_user_config(cfg)
+            finally:
+                config.DEFAULT_CONFIG_PATH = original_default
+
+            self.assertEqual(output_path, Path(output_dir) / "configuration.toml")
+            self.assertTrue(output_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
