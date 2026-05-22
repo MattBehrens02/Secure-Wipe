@@ -182,6 +182,20 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 
 
 def _configure_settings(app_config, terminal_ui: TerminalUI):
+	wipe_cfg = getattr(app_config, "wipe", None)
+	if wipe_cfg is None:
+		wipe_cfg = SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero")
+		app_config.wipe = wipe_cfg
+
+	pattern_order = ["fillzero", "random", "nnsa", "dod"]
+
+	def _cycle_pattern(current_value: str) -> str:
+		current_normalized = str(current_value).strip().lower()
+		if current_normalized not in pattern_order:
+			return pattern_order[0]
+		next_index = (pattern_order.index(current_normalized) + 1) % len(pattern_order)
+		return pattern_order[next_index]
+
 	while True:
 		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
 			terminal_ui.clear()
@@ -191,6 +205,8 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			f"Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
 			f"Toggle Logging Level (currently: {app_config.logging.level.upper()})",
 			f"Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
+			f"Cycle Container Scrub Pattern (currently: {wipe_cfg.container_scrub_pattern})",
+			f"Cycle HDD Final Pattern (currently: {wipe_cfg.hdd_final_scrub_pattern})",
 		]
 		_print_submenu("Configuration", choices, "Enter number or R to return")
 
@@ -238,6 +254,12 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			next_index = (detail_levels.index(current) + 1) % len(detail_levels)
 			app_config.reporting.detail_level = detail_levels[next_index]
 			print(f"Report detail level is now {app_config.reporting.detail_level}.")
+		elif choice.startswith("Cycle Container Scrub Pattern"):
+			wipe_cfg.container_scrub_pattern = _cycle_pattern(wipe_cfg.container_scrub_pattern)
+			print(f"Container scrub pattern is now {wipe_cfg.container_scrub_pattern}.")
+		elif choice.startswith("Cycle HDD Final Pattern"):
+			wipe_cfg.hdd_final_scrub_pattern = _cycle_pattern(wipe_cfg.hdd_final_scrub_pattern)
+			print(f"HDD final scrub pattern is now {wipe_cfg.hdd_final_scrub_pattern}.")
 
 		try:
 			config.save_user_config(app_config)

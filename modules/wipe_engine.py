@@ -235,6 +235,8 @@ class WipeEngine:
         self._current_step_total = 0
         self._current_step_label = ""
         self._drive_size_bytes = _parse_size_to_bytes(getattr(drive, "size", None))
+        self._container_scrub_pattern = "fillzero"
+        self._hdd_final_scrub_pattern = "fillzero"
 
     def execute(self):
         """Run the full wipe sequence and return a high-level status result."""
@@ -242,6 +244,14 @@ class WipeEngine:
 
     def execute_with_recovery(self, app_config):
         """Run wipe with checkpoint persistence and resume support."""
+        wipe_cfg = getattr(app_config, "wipe", object())
+        self._container_scrub_pattern = str(
+            getattr(wipe_cfg, "container_scrub_pattern", self._container_scrub_pattern)
+        ).strip().lower() or self._container_scrub_pattern
+        self._hdd_final_scrub_pattern = str(
+            getattr(wipe_cfg, "hdd_final_scrub_pattern", self._hdd_final_scrub_pattern)
+        ).strip().lower() or self._hdd_final_scrub_pattern
+
         recovery_cfg = getattr(app_config, "recovery", object())
         state_dir = getattr(getattr(app_config, "paths", object()), "state_dir", "./state")
         resume_max_age_seconds = int(getattr(recovery_cfg, "resume_state_max_age_seconds", 86400))
@@ -585,7 +595,7 @@ class WipeEngine:
     def _write_across_encrypted_drive(self):
         """Overwrite the mapped encrypted block device using scrub."""
         mapped_device = f"/dev/mapper/{self.mapping_name}"
-        scrub_pattern = "nnsa"
+        scrub_pattern = self._container_scrub_pattern
         cmd = WipeCommands.scrub(mapped_device, pattern=scrub_pattern)
 
         expected_bytes = None
@@ -617,7 +627,7 @@ class WipeEngine:
 
     def _final_hdd_overwrite(self):
         """Perform a final overwrite of the entire drive with zeros (HDD-specific)."""
-        cmd = WipeCommands.scrub(self.path, pattern="fillzero")
+        cmd = WipeCommands.scrub(self.path, pattern=self._hdd_final_scrub_pattern)
 
         self._run_step_command(
             cmd,

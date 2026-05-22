@@ -29,6 +29,12 @@ lock_stale_seconds = 7200            # stale lock threshold (2 hours)
 resume_state_max_age_seconds = 86400 # offer resume for states updated within 24 hours
 allow_failed_resume = false          # resume interrupted by default; failed requires restart
 
+[wipe]
+# Scrub patterns passed to the `scrub -p <pattern>` command.
+# Common values: fillzero (fast single-pass), nnsa (harsher multi-pass).
+container_scrub_pattern = "fillzero"
+hdd_final_scrub_pattern = "fillzero"
+
 [reporting]
 formats = ["json", "txt"]  # json | txt
 detail_level = "verbose"     # minimal | standard | verbose

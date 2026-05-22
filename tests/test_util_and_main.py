@@ -389,6 +389,45 @@ class TestUtilitiesAndMain(unittest.TestCase):
         mock_save_config.assert_called_once()
 
     @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[4, -1])
+    @patch("main.config.save_user_config")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["6", "r"])
+    def test_main_configuration_menu_cycles_container_scrub_pattern(
+        self,
+        _mock_input,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_save_config,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            upload=SimpleNamespace(enabled=False),
+            drive_detection=SimpleNamespace(collect_smart_info=True),
+            logging=SimpleNamespace(level="info"),
+            reporting=SimpleNamespace(detail_level="verbose"),
+            wipe=SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero"),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        rc = main.main(interactive=True)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(cfg.wipe.container_scrub_pattern, "random")
+        mock_save_config.assert_called_once()
+
+    @patch("main.sys.stdin.isatty", return_value=True)
     @patch("main.menu_shell.run", side_effect=[3, -1])
     @patch("main.reporting.read_saved_report")
     @patch("main.reporting.list_saved_reports")

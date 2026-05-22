@@ -47,6 +47,11 @@ class RecoveryConfig:
     allow_failed_resume: bool = False
 
 @dataclass
+class WipeConfig:
+    container_scrub_pattern: str = "fillzero"
+    hdd_final_scrub_pattern: str = "fillzero"
+
+@dataclass
 class ReportingConfig:
     formats: List[str] = field(default_factory=lambda: ["json", "txt"])
     detail_level: str = "verbose"  # minimal | standard | verbose
@@ -71,6 +76,7 @@ class AppConfig:
     drive_detection: DriveDetectionConfig = field(default_factory=DriveDetectionConfig)
     verification: VerificationConfig = field(default_factory=VerificationConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
+    wipe: WipeConfig = field(default_factory=WipeConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
     upload: UploadConfig = field(default_factory=UploadConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -91,6 +97,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
         "resume_state_max_age_seconds",
         "allow_failed_resume",
     },
+    "wipe": {"container_scrub_pattern", "hdd_final_scrub_pattern"},
     "reporting": {"formats", "detail_level"},
     "upload": {"enabled", "repo", "branch", "retry_count"},
     "logging": {"enabled", "level"},
@@ -121,6 +128,9 @@ def _apply_overrides_from_raw_data(config: AppConfig, raw_data: dict[str, Any]) 
 
     recovery_data = raw_data.get("recovery", {})
     _apply_recovery_overrides(config, recovery_data)
+
+    wipe_data = raw_data.get("wipe", {})
+    _apply_wipe_overrides(config, wipe_data)
 
     reporting_data = raw_data.get("reporting", {})
     _apply_reporting_overrides(config, reporting_data)
@@ -174,6 +184,13 @@ def _apply_recovery_overrides(config: AppConfig, recovery_data: dict[str, Any]) 
         config.recovery.resume_state_max_age_seconds = int(recovery_data["resume_state_max_age_seconds"])
     if "allow_failed_resume" in recovery_data:
         config.recovery.allow_failed_resume = bool(recovery_data["allow_failed_resume"])
+
+
+def _apply_wipe_overrides(config: AppConfig, wipe_data: dict[str, Any]) -> None:
+    if "container_scrub_pattern" in wipe_data:
+        config.wipe.container_scrub_pattern = str(wipe_data["container_scrub_pattern"]).strip().lower()
+    if "hdd_final_scrub_pattern" in wipe_data:
+        config.wipe.hdd_final_scrub_pattern = str(wipe_data["hdd_final_scrub_pattern"]).strip().lower()
 
 
 def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
@@ -253,6 +270,16 @@ def _validate_config(config: AppConfig) -> None:
 
     if not isinstance(config.recovery.allow_failed_resume, bool):
         raise ValueError("recovery.allow_failed_resume must be a boolean")
+
+    for key_name, scrub_pattern in {
+        "wipe.container_scrub_pattern": config.wipe.container_scrub_pattern,
+        "wipe.hdd_final_scrub_pattern": config.wipe.hdd_final_scrub_pattern,
+    }.items():
+        normalized = str(scrub_pattern).strip().lower()
+        if not normalized:
+            raise ValueError(f"{key_name} must be a non-empty string")
+        if not normalized.replace("_", "").replace("-", "").isalnum():
+            raise ValueError(f"{key_name} may only contain letters, numbers, '_' or '-'")
 
     if not isinstance(config.logging.enabled, bool):
         raise ValueError("logging.enabled must be a boolean")
@@ -362,6 +389,10 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
             "resume_state_max_age_seconds": config.recovery.resume_state_max_age_seconds,
             "allow_failed_resume": config.recovery.allow_failed_resume,
         },
+        "wipe": {
+            "container_scrub_pattern": config.wipe.container_scrub_pattern,
+            "hdd_final_scrub_pattern": config.wipe.hdd_final_scrub_pattern,
+        },
         "reporting": {
             "formats": list(config.reporting.formats),
             "detail_level": config.reporting.detail_level,
@@ -396,6 +427,7 @@ def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None
         "safety",
         "drive_detection",
         "recovery",
+        "wipe",
         "reporting",
         "upload",
         "logging",

@@ -34,6 +34,10 @@ class TestConfig(unittest.TestCase):
             resume_state_max_age_seconds = 43200
             allow_failed_resume = true
 
+            [wipe]
+            container_scrub_pattern = "nnsa"
+            hdd_final_scrub_pattern = "dod"
+
             [reporting]
             formats = ["json"]
             detail_level = "standard"
@@ -60,6 +64,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.recovery.lock_stale_seconds, 3600)
         self.assertEqual(cfg.recovery.resume_state_max_age_seconds, 43200)
         self.assertTrue(cfg.recovery.allow_failed_resume)
+        self.assertEqual(cfg.wipe.container_scrub_pattern, "nnsa")
+        self.assertEqual(cfg.wipe.hdd_final_scrub_pattern, "dod")
         self.assertEqual(cfg.reporting.formats, ["json"])
         self.assertEqual(cfg.reporting.detail_level, "standard")
         self.assertTrue(cfg.logging.enabled)
