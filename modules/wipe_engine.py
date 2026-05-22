@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+import glob
 import os
+import re
 import sys
 import time
 import uuid
@@ -27,6 +29,128 @@ def _format_seconds(seconds: float | None) -> str:
     return f"{secs}s"
 
 
+def _format_speed_mbps(bytes_per_second: float | None) -> str:
+    if bytes_per_second is None or bytes_per_second <= 0:
+        return "n/a"
+    return f"{(bytes_per_second / 1_000_000):.0f} MB/s"
+
+
+def _format_speed_pair(current_speed_bps: float | None, average_speed_bps: float | None) -> str:
+    return f"{_format_speed_mbps(current_speed_bps)} / {_format_speed_mbps(average_speed_bps)}"
+
+
+def _parse_size_to_bytes(size_value: str | int | float | None) -> int | None:
+    if size_value is None:
+        return None
+
+    if isinstance(size_value, (int, float)):
+        numeric = int(size_value)
+        return numeric if numeric > 0 else None
+
+    text = str(size_value).strip()
+    if not text:
+        return None
+
+    if text.isdigit():
+        numeric = int(text)
+        return numeric if numeric > 0 else None
+
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([kmgtpe]?i?b?)", text.lower())
+    if not match:
+        return None
+
+    magnitude = float(match.group(1))
+    unit = match.group(2)
+
+    multipliers = {
+        "": 1,
+        "b": 1,
+        "k": 1_000,
+        "kb": 1_000,
+        "m": 1_000_000,
+        "mb": 1_000_000,
+        "g": 1_000_000_000,
+        "gb": 1_000_000_000,
+        "t": 1_000_000_000_000,
+        "tb": 1_000_000_000_000,
+        "p": 1_000_000_000_000_000,
+        "pb": 1_000_000_000_000_000,
+        "ki": 1024,
+        "kib": 1024,
+        "mi": 1024**2,
+        "mib": 1024**2,
+        "gi": 1024**3,
+        "gib": 1024**3,
+        "ti": 1024**4,
+        "tib": 1024**4,
+        "pi": 1024**5,
+        "pib": 1024**5,
+    }
+    multiplier = multipliers.get(unit)
+    if multiplier is None:
+        return None
+
+    parsed = int(magnitude * multiplier)
+    return parsed if parsed > 0 else None
+
+
+def _resolve_sys_block_name(device_path: str) -> str | None:
+    base_name = os.path.basename(device_path)
+    if not base_name:
+        return None
+
+    if os.path.exists(f"/sys/block/{base_name}/stat"):
+        return base_name
+
+    if device_path.startswith("/dev/mapper/"):
+        mapper_name = base_name
+        for dm_name_file in glob.glob("/sys/block/dm-*/dm/name"):
+            try:
+                with open(dm_name_file, "r", encoding="utf-8") as handle:
+                    if handle.read().strip() == mapper_name:
+                        return dm_name_file.split("/")[3]
+            except OSError:
+                continue
+
+    return None
+
+
+def _resolve_write_counter_paths(device_path: str) -> tuple[str, str] | None:
+    block_name = _resolve_sys_block_name(device_path)
+    if not block_name:
+        return None
+
+    stat_path = f"/sys/block/{block_name}/stat"
+    sector_size_path = f"/sys/block/{block_name}/queue/hw_sector_size"
+    if not os.path.exists(sector_size_path):
+        sector_size_path = f"/sys/block/{block_name}/queue/logical_block_size"
+
+    if os.path.exists(stat_path) and os.path.exists(sector_size_path):
+        return (stat_path, sector_size_path)
+
+    return None
+
+
+def _read_written_bytes(counter_paths: tuple[str, str]) -> int | None:
+    stat_path, sector_size_path = counter_paths
+    try:
+        with open(stat_path, "r", encoding="utf-8") as stat_handle:
+            fields = stat_handle.read().strip().split()
+        if len(fields) < 7:
+            return None
+
+        sectors_written = int(fields[6])
+
+        with open(sector_size_path, "r", encoding="utf-8") as sector_handle:
+            sector_size = int(sector_handle.read().strip())
+
+        if sectors_written < 0 or sector_size <= 0:
+            return None
+        return sectors_written * sector_size
+    except (OSError, ValueError):
+        return None
+
+
 def _clean_info_label(info_message: str) -> str:
     label = info_message.strip()
     if label.startswith("[INFO]"):
@@ -48,12 +172,14 @@ def _build_progress_line(
     step_total: int,
     step_label: str,
     elapsed_step: float,
-    overall_elapsed: float,
     eta_hint: float | None,
+    current_speed_bps: float | None = None,
+    average_speed_bps: float | None = None,
+    progress_ratio: float | None = None,
     bar_width: int = 20,
 ) -> str:
-    ratio = None
-    if eta_hint is not None:
+    ratio = progress_ratio
+    if ratio is None and eta_hint is not None:
         total_estimate = elapsed_step + max(0.0, eta_hint)
         if total_estimate > 0:
             ratio = min(0.999, max(0.0, elapsed_step / total_estimate))
@@ -62,19 +188,19 @@ def _build_progress_line(
         spinner = _spinner_frame(elapsed_step)
         bar = "[" + ("." * bar_width) + "]"
         pct_text = " --%"
-        activity = f"{spinner} running"
+        lead = f"{spinner}"
     else:
         filled = int(ratio * bar_width)
         bar = "[" + ("#" * filled) + ("-" * (bar_width - filled)) + "]"
         pct_text = f" {int(ratio * 100):>3}%"
-        activity = "running"
+        lead = "run"
 
     return (
-        f"Step {step_index}/{step_total} {step_label} "
-        f"{bar}{pct_text} {activity} "
-        f"step {_format_seconds(elapsed_step)} "
-        f"total {_format_seconds(overall_elapsed)} "
-        f"ETA {_format_seconds(eta_hint)}"
+        f"S{step_index}/{step_total} {step_label} "
+        f"{bar}{pct_text} {lead} "
+        f"spd {_format_speed_pair(current_speed_bps, average_speed_bps)} "
+        f"ETA {_format_seconds(eta_hint)} "
+        f"elap {_format_seconds(elapsed_step)}"
     )
 
 
@@ -108,6 +234,7 @@ class WipeEngine:
         self._current_step_index = 0
         self._current_step_total = 0
         self._current_step_label = ""
+        self._drive_size_bytes = _parse_size_to_bytes(getattr(drive, "size", None))
 
     def execute(self):
         """Run the full wipe sequence and return a high-level status result."""
@@ -360,7 +487,7 @@ class WipeEngine:
             smart_before=self.smart_before,
         )
 
-    def _run_step_command(self, cmd, info_message: str):
+    def _run_step_command(self, cmd, info_message: str, progress_device: str | None = None, expected_bytes: int | None = None):
         """Execute one command or print it when running in dry-run mode."""
         if self.dry_run:
             print("[DRY RUN]", " ".join(cmd))
@@ -372,9 +499,15 @@ class WipeEngine:
 
         self._last_step_progress_emit = 0.0
         rendered_progress = False
+        speed_counter_paths = _resolve_write_counter_paths(progress_device) if progress_device else None
+        step_start_written_bytes = _read_written_bytes(speed_counter_paths) if speed_counter_paths else None
+        last_sample_written_bytes = step_start_written_bytes
+        last_sample_time = time.perf_counter()
 
         def _emit_progress(elapsed_step: float) -> None:
             nonlocal rendered_progress
+            nonlocal last_sample_time
+            nonlocal last_sample_written_bytes
             if elapsed_step - self._last_step_progress_emit < self._step_progress_emit_interval:
                 return
 
@@ -382,7 +515,33 @@ class WipeEngine:
             overall_elapsed = time.perf_counter() - self._overall_start_perf
 
             eta_hint = None
-            if self._avg_step_seconds is not None:
+            progress_ratio = None
+            current_speed_bps = None
+            average_speed_bps = None
+
+            now = time.perf_counter()
+            if speed_counter_paths:
+                current_written_bytes = _read_written_bytes(speed_counter_paths)
+                if current_written_bytes is not None:
+                    if step_start_written_bytes is not None and elapsed_step > 0:
+                        bytes_since_start = max(0, current_written_bytes - step_start_written_bytes)
+                        average_speed_bps = bytes_since_start / elapsed_step
+
+                        if expected_bytes and expected_bytes > 0:
+                            progress_ratio = min(0.999, max(0.0, bytes_since_start / expected_bytes))
+                            if average_speed_bps > 0:
+                                remaining_bytes = max(0, expected_bytes - bytes_since_start)
+                                eta_hint = remaining_bytes / average_speed_bps
+
+                    if last_sample_written_bytes is not None:
+                        bytes_since_last = max(0, current_written_bytes - last_sample_written_bytes)
+                        sample_elapsed = max(0.001, now - last_sample_time)
+                        current_speed_bps = bytes_since_last / sample_elapsed
+
+                    last_sample_written_bytes = current_written_bytes
+                    last_sample_time = now
+
+            if eta_hint is None and self._avg_step_seconds is not None:
                 remaining_current = max(0.0, self._avg_step_seconds - elapsed_step)
                 eta_hint = remaining_current + (self._avg_step_seconds * self._remaining_steps_after_current)
 
@@ -391,11 +550,13 @@ class WipeEngine:
                 step_total=self._current_step_total,
                 step_label=self._current_step_label or _clean_info_label(info_message),
                 elapsed_step=elapsed_step,
-                overall_elapsed=overall_elapsed,
                 eta_hint=eta_hint,
+                current_speed_bps=current_speed_bps,
+                average_speed_bps=average_speed_bps,
+                progress_ratio=progress_ratio,
             )
 
-            sys.stdout.write("\r" + line.ljust(140))
+            sys.stdout.write("\r" + line.ljust(150))
             sys.stdout.flush()
             rendered_progress = True
 
@@ -424,8 +585,20 @@ class WipeEngine:
     def _write_across_encrypted_drive(self):
         """Overwrite the mapped encrypted block device using scrub."""
         mapped_device = f"/dev/mapper/{self.mapping_name}"
-        cmd = WipeCommands.scrub(mapped_device, pattern="nnsa")
-        self._run_step_command(cmd, "[INFO] Scrubbing mapped device...")
+        scrub_pattern = "nnsa"
+        cmd = WipeCommands.scrub(mapped_device, pattern=scrub_pattern)
+
+        expected_bytes = None
+        if self._drive_size_bytes:
+            scrub_pass_count = 4 if scrub_pattern == "nnsa" else 1
+            expected_bytes = self._drive_size_bytes * scrub_pass_count
+
+        self._run_step_command(
+            cmd,
+            "[INFO] Scrubbing mapped device...",
+            progress_device=mapped_device,
+            expected_bytes=expected_bytes,
+        )
 
     def _close_encrypted_container(self):
         """Close the LUKS mapper to detach the encrypted view of the drive."""
@@ -445,7 +618,13 @@ class WipeEngine:
     def _final_hdd_overwrite(self):
         """Perform a final overwrite of the entire drive with zeros (HDD-specific)."""
         cmd = WipeCommands.scrub(self.path, pattern="fillzero")
-        self._run_step_command(cmd, "[INFO] Performing final HDD overwrite...")
+
+        self._run_step_command(
+            cmd,
+            "[INFO] Performing final HDD overwrite...",
+            progress_device=self.path,
+            expected_bytes=self._drive_size_bytes,
+        )
 
     def _delete_temporary_key(self):
         """Best-effort cleanup of the temporary wipe key file."""
