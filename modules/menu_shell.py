@@ -2,6 +2,7 @@ from modules import version
 from modules.config import load_config
 from modules import recovery
 from modules.terminal import get_adaptive_menu_width
+from modules.time_utils import now_for_output_names
 from pathlib import Path
 from datetime import datetime, timezone
 import subprocess
@@ -51,7 +52,7 @@ def environment_info(width: int):
     dry_run = "ON" if config.runtime.dry_run else "OFF"
     upload_enabled = "ON" if config.upload.enabled else "OFF"
     logging_level = config.logging.level.upper()
-    current_time = datetime.now().strftime("%b %d, %Y %I:%M %p")
+    current_time = now_for_output_names(config).strftime("%b %d, %Y %I:%M %p")
 
     state_dir = getattr(getattr(config, "paths", object()), "state_dir", "./state")
     reports_dir = Path(getattr(getattr(config, "paths", object()), "reports_dir", "./reports"))
