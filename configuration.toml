@@ -37,14 +37,15 @@ hdd_final_scrub_pattern = "fillzero"
 
 [reporting]
 formats = ["json", "txt"]  # json | txt
-detail_level = "verbose"     # minimal | standard | verbose
+detail_level = "standard"     # minimal | standard | verbose
 
 [upload]
 enabled = false  # Set to true to enable Git-based report upload
 repo = ""  # Git repository URL (e.g., git@github.com:user/private-repo.git)
 branch = "main"  # Branch to push reports to
 retry_count = 3  # Number of retry attempts on network failure
+ssh_private_key_path = ""  # Optional SSH private key path for git auth (e.g., /home/its/.ssh/id_ed25519)
 
 [logging]
 enabled = true       # true | false
-level = "info"      # info | errors
+level = "errors"      # info | errors

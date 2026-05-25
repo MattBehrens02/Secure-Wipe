@@ -6,10 +6,25 @@ from modules import config
 from modules.smartctl import collect_smart_snapshot
 from modules.smartctl import collect_smart_info
 from modules import header
-from modules.terminal import CommandRunnerError, CommandRunnerTimeout, TerminalUI, run_command
+from modules.terminal import (
+    CommandRunnerError,
+    CommandRunnerTimeout,
+    TerminalUI,
+    get_adaptive_menu_width,
+    run_command,
+)
 
 
-DRIVE_MENU_WIDTH = 80
+DRIVE_MENU_WIDTH_MIN = 88
+DRIVE_MENU_WIDTH_DEFAULT = 108
+DRIVE_MENU_WIDTH_MAX = 120
+DRIVE_PAGE_SIZE = 10
+
+_TABLE_ID_WIDTH = 3
+_TABLE_PATH_WIDTH = 12
+_TABLE_SIZE_WIDTH = 8
+_TABLE_MEDIA_WIDTH = 7
+_TABLE_FLAGS_WIDTH = 11
 
 class DriveDetectionError(Exception):
     pass
@@ -213,28 +228,128 @@ def normalize_drives(fetched_drives: Any) -> list[Drive]:
 
 # Print a menu of available drives for user selection.
 def _menu_line() -> None:
-    print("+" + "-" * (DRIVE_MENU_WIDTH - 2) + "+")
+    width = _drive_menu_width()
+    print("+" + "-" * (width - 2) + "+")
 
 
 def _menu_row(text: str) -> None:
-    print("|" + text[: DRIVE_MENU_WIDTH - 2].ljust(DRIVE_MENU_WIDTH - 2) + "|")
+    width = _drive_menu_width()
+    print("|" + text[: width - 2].ljust(width - 2) + "|")
 
 
-def print_menu_options(drives: list[Drive]) -> None:
+def _drive_menu_width() -> int:
+    return get_adaptive_menu_width(
+        min_width=DRIVE_MENU_WIDTH_MIN,
+        default_width=DRIVE_MENU_WIDTH_DEFAULT,
+        max_width=DRIVE_MENU_WIDTH_MAX,
+    )
+
+
+def _drive_table_model_width() -> int:
+    # Account for six columns and five separators: " | "
+    separator_width = 5 * 3
+    occupied = (
+        _TABLE_ID_WIDTH
+        + _TABLE_PATH_WIDTH
+        + _TABLE_SIZE_WIDTH
+        + _TABLE_MEDIA_WIDTH
+        + _TABLE_FLAGS_WIDTH
+        + separator_width
+    )
+    menu_width = _drive_menu_width()
+    return max(10, (menu_width - 2) - occupied)
+
+
+def _clip_table_value(value: str, width: int) -> str:
+    text = str(value or "")
+    if len(text) <= width:
+        return text.ljust(width)
+    if width <= 1:
+        return text[:width]
+    return (text[: width - 1] + "~")
+
+
+def _drive_table_header() -> str:
+    model_width = _drive_table_model_width()
+    return (
+        f"{_clip_table_value('ID', _TABLE_ID_WIDTH)} | "
+        f"{_clip_table_value('Path', _TABLE_PATH_WIDTH)} | "
+        f"{_clip_table_value('Size', _TABLE_SIZE_WIDTH)} | "
+        f"{_clip_table_value('Media', _TABLE_MEDIA_WIDTH)} | "
+        f"{_clip_table_value('Flags', _TABLE_FLAGS_WIDTH)} | "
+        f"{_clip_table_value('Model', model_width)}"
+    )
+
+
+def _drive_table_rule() -> str:
+    model_width = _drive_table_model_width()
+    return (
+        f"{'-' * _TABLE_ID_WIDTH}-+-"
+        f"{'-' * _TABLE_PATH_WIDTH}-+-"
+        f"{'-' * _TABLE_SIZE_WIDTH}-+-"
+        f"{'-' * _TABLE_MEDIA_WIDTH}-+-"
+        f"{'-' * _TABLE_FLAGS_WIDTH}-+-"
+        f"{'-' * model_width}"
+    )
+
+
+def _drive_table_row(menu_index: int, drive: Drive) -> str:
+    model_width = _drive_table_model_width()
+    flags = "removable" if drive.removable else "fixed"
+    model = f"{drive.vendor} {drive.model}".strip() or "Unknown Drive"
+    return (
+        f"{_clip_table_value(str(menu_index), _TABLE_ID_WIDTH)} | "
+        f"{_clip_table_value(drive.path, _TABLE_PATH_WIDTH)} | "
+        f"{_clip_table_value(drive.size, _TABLE_SIZE_WIDTH)} | "
+        f"{_clip_table_value(drive.media_type, _TABLE_MEDIA_WIDTH)} | "
+        f"{_clip_table_value(flags, _TABLE_FLAGS_WIDTH)} | "
+        f"{_clip_table_value(model, model_width)}"
+    )
+
+
+def _normalize_nav_input(raw_value: str) -> str:
+    return str(raw_value or "").strip().lower()
+
+
+def _parse_drive_menu_input(raw_value: str) -> tuple[str, str]:
+    """Parse shared drive-menu navigation commands.
+
+    Returns:
+        (action, normalized_value)
+        action: 'select', 'back', 'next_page', 'prev_page'
+    """
+    value = _normalize_nav_input(raw_value)
+    if value in {"q", "r", "b", "back", "return"}:
+        return "back", value
+    if value in {"n", "f", "next", "forward", ">"}:
+        return "next_page", value
+    if value in {"p", "prev", "previous", "<"}:
+        return "prev_page", value
+    return "select", value
+
+
+def print_menu_options(drives: list[Drive], page_index: int = 0, page_size: int = DRIVE_PAGE_SIZE) -> None:
+    page_count = max(1, (len(drives) + page_size - 1) // page_size)
+    page_index = max(0, min(page_index, page_count - 1))
+    start = page_index * page_size
+    end = start + page_size
+    page_drives = drives[start:end]
+
     header.print_header()
     print("\n")
     _menu_line()
     _menu_row(" Drive Selection ")
     _menu_line()
+    _menu_row(_drive_table_header())
+    _menu_row(_drive_table_rule())
 
-    for menu_index, drive in enumerate(drives, start=1):
-        drive_name = f"{drive.vendor} {drive.model}".strip() or "Unknown Drive"
-        drive_type = "Removable" if drive.removable else "Fixed"
-        label = f" [{menu_index}] {drive_name} | {drive.path} | {drive.size} | {drive.media_type} | {drive_type}"
-        _menu_row(label)
+    for offset, drive in enumerate(page_drives):
+        menu_index = start + offset + 1
+        _menu_row(_drive_table_row(menu_index, drive))
 
     _menu_line()
-    _menu_row(" Enter drive number(s) separated by commas, or Q to quit")
+    _menu_row(f" Page {page_index + 1}/{page_count} | N/F next | P previous | B/R/Q return")
+    _menu_row(" Enter drive number(s) separated by commas to select")
     _menu_line()
 
 
@@ -249,21 +364,31 @@ def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI, app_c
         print("No eligible disk drives detected.")
         return []
 
-    valid_input = False
+    page_count = max(1, (len(formatted_drives) + DRIVE_PAGE_SIZE - 1) // DRIVE_PAGE_SIZE)
+    page_index = 0
 
-    while not valid_input:
+    while True:
         if _is_prod(app_config):
             terminal_ui.clear()
 
-        print_menu_options(formatted_drives)
+        print_menu_options(formatted_drives, page_index=page_index, page_size=DRIVE_PAGE_SIZE)
         choice = input("Select drive(s): ").strip()
+        action, parsed_value = _parse_drive_menu_input(choice)
 
-        if 'q' in choice.lower():
+        if action == "back":
             print("Exiting.")
             return []
-        
+        if action == "next_page":
+            if page_index < page_count - 1:
+                page_index += 1
+            continue
+        if action == "prev_page":
+            if page_index > 0:
+                page_index -= 1
+            continue
+
         try:
-            choices = [c.strip() for c in choice.split(',') if c.strip()]
+            choices = [c.strip() for c in parsed_value.split(',') if c.strip()]
             selected_drives = []
             valid = True
             
@@ -282,10 +407,7 @@ def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI, app_c
             
         except ValueError:
             terminal_ui.clear()
-            print("\nInvalid input. Please enter numbers separated by commas, or 'q' to quit.")
-
-
-    return []
+            print("\nInvalid input. Enter numbers, N/F for next page, P for previous page, or B/R/Q to return.")
 
 # Detects drives using lsblk and returns the parsed JSON output. Raises DriveDetectionError on failure.
 def detect_drives() -> dict[str, Any]:

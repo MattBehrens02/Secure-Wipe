@@ -104,6 +104,24 @@ Record every manual deletion in incident notes.
 3. Re-run in controlled conditions once.
 4. Escalate if repeated failure persists on known-good media.
 
+### Check-Level Triage Guide
+
+| Failed Check Name | Likely Cause | First Operator Actions |
+|-------------------|--------------|------------------------|
+| `luks_header_destroyed` | LUKS header erase did not complete, or wrong device path was evaluated | Confirm target device path, review wipe-step logs around container destroy/cleanup, rerun once in controlled mode |
+| `filesystem_signatures_absent` | Residual filesystem signatures remain | Review signature cleanup step outcome and `wipefs` output in logs/report details, rerun once |
+| `random_sector_sampling` | On HDD, sampled sectors are not all zero; or sampling hit read/I/O issues | Confirm HDD final scrub pattern, verify expected zeroing behavior, check media health/logged I/O errors |
+
+### Reporting-Level Guidance for Incident Triage
+
+| Reporting Level | Verification Visibility |
+|-----------------|-------------------------|
+| `minimal` | Status only; no passed/failed check name list |
+| `standard` | Verification counts plus passed/failed check names |
+| `verbose` | Standard visibility plus detailed verification error payloads and timeline context |
+
+For incident response, use at least `standard` to capture exact failed check names.
+
 ## Failure Scenario: Report Save Failure
 ### Symptoms
 - Error during report generation/save.

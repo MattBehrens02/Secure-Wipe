@@ -393,6 +393,44 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.config.save_user_config")
     @patch("main.config.load_config")
     @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["b"])
+    def test_main_configuration_menu_accepts_b_for_back(
+        self,
+        _mock_input,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_save_config,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            upload=SimpleNamespace(enabled=False),
+            drive_detection=SimpleNamespace(collect_smart_info=True),
+            logging=SimpleNamespace(level="info"),
+            reporting=SimpleNamespace(detail_level="verbose"),
+            wipe=SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero"),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        rc = main.main(interactive=True)
+
+        self.assertEqual(rc, 0)
+        mock_save_config.assert_not_called()
+
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[4, -1])
+    @patch("main.config.save_user_config")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
     @patch("builtins.input", side_effect=["6", "r"])
     def test_main_configuration_menu_cycles_container_scrub_pattern(
         self,
@@ -499,6 +537,47 @@ class TestUtilitiesAndMain(unittest.TestCase):
         rc = main.main(interactive=True)
 
         self.assertEqual(rc, 0)
+
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[3, -1])
+    @patch("main.reporting.read_saved_report", return_value="report body")
+    @patch("main.reporting.list_saved_reports")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["f", "1", "", "b"])
+    def test_main_view_reports_accepts_f_for_next_page_and_b_for_back(
+        self,
+        _mock_input,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_list_reports,
+        mock_read_report,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            drive_detection=SimpleNamespace(collect_smart_info=False),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        from pathlib import Path
+
+        report_paths = [Path(f"/tmp/reports/report_{idx:02d}.txt") for idx in range(1, 22)]
+        mock_list_reports.return_value = report_paths
+
+        rc = main.main(interactive=True)
+
+        self.assertEqual(rc, 0)
+        mock_read_report.assert_called_once_with(report_paths[20])
 
     @patch("main.sys.stdin.isatty", return_value=True)
     @patch("main.menu_shell.run", side_effect=[5, -1])

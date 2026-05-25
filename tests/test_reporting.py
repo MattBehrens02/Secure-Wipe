@@ -26,11 +26,12 @@ VERSION = AppVersion()
 class TestWipeReport(unittest.TestCase):
     def test_wipe_report_creation_with_defaults(self):
         report = WipeReport()
-        self.assertEqual(report.report_version, "1.0")
+        self.assertEqual(report.report_version, VERSION.report_schema_version)
         self.assertEqual(report.operator_identifier, "unknown")
         self.assertEqual(report.encryption, "LUKS2")
         self.assertEqual(report.key_size_bits, 256)
-        self.assertEqual(report.scrub_pattern, "nnsa")
+        self.assertEqual(report.scrub_pattern, "fillzero")
+        self.assertEqual(report.hdd_final_scrub_pattern, "fillzero")
         self.assertFalse(report.hdd_final_pass)
         self.assertEqual(report.status, "unknown")
         self.assertEqual(report.step_durations, {})
@@ -73,6 +74,9 @@ class TestGenerateWipeReport(unittest.TestCase):
         self.app_config.runtime.environment = "production"
         self.app_config.reporting = Mock()
         self.app_config.reporting.operator_identifier = "tech_john_admin"
+        self.app_config.wipe = Mock()
+        self.app_config.wipe.container_scrub_pattern = "nnsa"
+        self.app_config.wipe.hdd_final_scrub_pattern = "dod"
 
     def test_generate_wipe_report_success(self):
         report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
@@ -80,6 +84,8 @@ class TestGenerateWipeReport(unittest.TestCase):
         self.assertEqual(report.drive_model, "Samsung SSD 970")
         self.assertEqual(report.drive_serial, "S4FC123456")
         self.assertEqual(report.status, "success")
+        self.assertEqual(report.scrub_pattern, "nnsa")
+        self.assertEqual(report.hdd_final_scrub_pattern, "dod")
         self.assertFalse(report.hdd_final_pass)
 
     def test_generate_wipe_report_with_hdd(self):
@@ -87,6 +93,12 @@ class TestGenerateWipeReport(unittest.TestCase):
         report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
         self.assertEqual(report.drive_media_type, "HDD")
         self.assertTrue(report.hdd_final_pass)
+
+    def test_generate_wipe_report_without_wipe_config_uses_defaults(self):
+        del self.app_config.wipe
+        report = generate_wipe_report(self.drive, self.wipe_result, self.app_config)
+        self.assertEqual(report.scrub_pattern, "fillzero")
+        self.assertEqual(report.hdd_final_scrub_pattern, "fillzero")
 
     def test_generate_wipe_report_failed_wipe(self):
         self.wipe_result.status = "failed"
@@ -144,7 +156,7 @@ class TestJsonSerialization(unittest.TestCase):
     def test_wipe_report_to_json_pretty(self):
         json_str = wipe_report_to_json(self.report, pretty=True)
         self.assertIn("{\n", json_str)
-        self.assertIn('"report_version": "1.0"', json_str)
+        self.assertIn(f'"report_version": "{VERSION.report_schema_version}"', json_str)
         self.assertIn('"status": "success"', json_str)
 
     def test_wipe_report_to_json_valid_structure(self):
@@ -226,7 +238,19 @@ class TestTextFormatting(unittest.TestCase):
     def test_wipe_report_to_text_standard_includes_method_without_timeline(self):
         text = wipe_report_to_text(self.report, detail_level="standard")
         self.assertIn("WIPE METHOD", text)
+        self.assertIn("Container Scrub:", text)
+        self.assertIn("HDD Final Scrub:", text)
         self.assertNotIn("STEP TIMELINE", text)
+
+    def test_wipe_report_to_text_standard_includes_check_names(self):
+        self.report.verification_checks_passed = ["luks_header_destroyed", "filesystem_signatures_absent"]
+        self.report.verification_checks_failed = ["random_sector_sampling"]
+        text = wipe_report_to_text(self.report, detail_level="standard")
+        self.assertIn("Passed Checks:", text)
+        self.assertIn("- luks_header_destroyed", text)
+        self.assertIn("- filesystem_signatures_absent", text)
+        self.assertIn("Failed Checks:", text)
+        self.assertIn("- random_sector_sampling", text)
 
     def test_wipe_report_to_text_failed_formatting(self):
         self.report.status = "failed"

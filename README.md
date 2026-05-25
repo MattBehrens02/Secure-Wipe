@@ -1,20 +1,17 @@
 # SecureWipe
 
-A bootable drive sanitization utility for secure IT asset disposition. Wipes connected storage devices using cryptographic methods with full audit logging and recovery handling.
+A secure drive sanitization system for IT asset disposition workflows.
 
-## Project Status
+SecureWipe is a terminal-first workflow that detects candidate drives, applies a cryptographic wipe sequence, validates the result with post-wipe checks, and writes auditable artifacts (logs, JSON report, text report) for chain-of-custody and troubleshooting.
 
-**Phase:** Pre-Hardening - Core Workflow Implemented
+## System Overview
 
-| Phase | Status | Est. Hours |
-|-------|--------|-----------|
-| Docker & Project Setup | ✅ Complete | ~4h |
-| Phase 1: Drive Detection + CLI | ✅ Complete | ~15h |
-| Phase 2: Wipe Engine + Recovery | ✅ Complete | ~35h |
-| Phase 3: Verification + Reporting + Upload | ✅ Complete | ~25h |
-| Phase 4: Hardening & Validation | 🔄 Next Focus | ~15h |
-
-**Total Estimated Timeline:** ~100 development hours
+SecureWipe is designed to be safe-by-default and operator-friendly:
+- Strong guardrails before destructive actions (drive filtering + confirmations)
+- Recovery-aware execution with lock/state handling for interruption scenarios
+- Verification checks that report both counts and check names in standard/verbose reports
+- Configurable wipe patterns and reporting depth
+- Optional queued Git upload for report archival
 
 ## What's Done
 
@@ -32,7 +29,7 @@ A bootable drive sanitization utility for secure IT asset disposition. Wipes con
 
 ## What's Next
 
-**Immediate (Phase 4 - Hardening):**
+**Immediate Priorities:**
 1. Harden error taxonomy and user-facing failure messages across modules
 2. Expand integration and fault-injection scenarios (timeouts, partial failures, network issues)
 3. Perform controlled non-dry-run validation on approved hardware
@@ -47,9 +44,76 @@ Top-level actions now include:
 - Configuration
 
 Submenu behavior:
-- `R` returns to main menu
+- `B` or `R` returns to the previous menu
 - Report viewer shows up to 20 entries per page
-- Report viewer supports `N` and `P` for page navigation
+- Report viewer supports `N`/`F` for next page and `P` for previous page
+
+Drive selection behavior:
+- `N`/`F` for next page and `P` for previous page (when multiple pages are present)
+- `B`/`R`/`Q` returns without selecting drives
+- Comma-separated drive numbers select one or more drives
+
+## Configuration Reference
+
+SecureWipe only accepts a curated set of keys in `configuration.toml`. Unknown keys fail validation at startup.
+
+### Runtime and Safety
+
+| Table | Key | Values | What It Controls |
+|-------|-----|--------|------------------|
+| `paths` | `output_root` | path or empty | Optional writable root used in `prod` for logs/reports/state. |
+| `runtime` | `environment` | `dev`, `test`, `prod` | Runtime mode; `prod` remaps runtime artifact directories. |
+| `runtime` | `dry_run` | `true`, `false` | If `true`, destructive commands are simulated. |
+| `runtime` | `timezone` | `UTC`, `local`, IANA zone | Timezone used for output naming/time behavior. |
+| `safety` | `removable_drive_mode` | `deny`, `allow` | Whether removable drives are eligible for wipe selection. |
+| `safety` | `mount_handling_mode` | `deny`, `allow` | Whether mounted drives are blocked or allowed. |
+| `safety` | `confirmation_steps` | `0`, `1`, `2` | Confirmation strictness before destructive execution. |
+
+### Wipe, Verification, and Reporting
+
+| Table | Key | Values | What It Controls |
+|-------|-----|--------|------------------|
+| `drive_detection` | `collect_smart_info` | `true`, `false` | Captures SMART metadata during detection when available. |
+| `wipe` | `container_scrub_pattern` | scrub pattern (for example `fillzero`, `nnsa`) | Pattern used for encrypted-container overwrite stage. |
+| `wipe` | `hdd_final_scrub_pattern` | scrub pattern (for example `fillzero`, `dod`) | Pattern used in the direct-device final HDD pass. |
+| `reporting` | `formats` | any of `json`, `txt` | Report output formats to persist. |
+| `reporting` | `detail_level` | `minimal`, `standard`, `verbose` | Report payload depth for JSON and text outputs. |
+| `logging` | `enabled` | `true`, `false` | Enables/disables application log writes. |
+| `logging` | `level` | `info`, `errors` | Log verbosity threshold. |
+
+### Recovery and Upload
+
+| Table | Key | Values | What It Controls |
+|-------|-----|--------|------------------|
+| `recovery` | `checkpoint_interval_seconds` | integer > 0 | Checkpoint cadence for long wipe steps. |
+| `recovery` | `max_resume_attempts` | integer >= 0 | Resume retry ceiling before forcing restart path. |
+| `recovery` | `lock_file_path` | path | Lock file location guarding concurrent wipes. |
+| `recovery` | `lock_stale_seconds` | integer > 0 | Age threshold for stale-lock logic. |
+| `recovery` | `resume_state_max_age_seconds` | integer > 0 | Maximum age for resume-eligible recovery states. |
+| `recovery` | `allow_failed_resume` | `true`, `false` | If `true`, failed states may still be offered for resume. |
+| `upload` | `enabled` | `true`, `false` | Enables Git-based report upload queue/push flow. |
+| `upload` | `repo` | Git URL | Target remote repository URL. |
+| `upload` | `branch` | branch name | Target branch for report commits. |
+| `upload` | `retry_count` | integer > 0 | Push retry attempts with backoff. |
+| `upload` | `ssh_private_key_path` | path or empty | Optional SSH private key path used via `GIT_SSH_COMMAND`. |
+
+## Reporting Detail Levels
+
+`reporting.detail_level` controls both JSON and text report depth.
+
+| Level | Includes | Omits | Typical Use |
+|------|----------|-------|-------------|
+| `minimal` | status, basic drive identity/path, timestamps, high-level verification status | wipe method details, platform metadata, step timeline, verification check names | Fast operator confirmation and dashboards |
+| `standard` | machine/drive metadata, wipe method, verification counts and verification check names (passed/failed), recovery summary | per-step duration timeline, verbose verification error lists | Normal production operations and troubleshooting |
+| `verbose` | everything in standard plus step durations, detailed verification lists/errors, full recovery session details | none (full payload) | Deep incident analysis and engineering diagnostics |
+
+## Verification Checks Reference
+
+| Check Name | What Pass Means | Common Failure Cause |
+|-----------|-----------------|----------------------|
+| `luks_header_destroyed` | LUKS metadata is no longer readable on target device. | Header erase step failed or wrong target path inspected. |
+| `filesystem_signatures_absent` | `wipefs --list` returns no residual signatures. | Residual filesystem signatures remain. |
+| `random_sector_sampling` | Sampling completed (SSD/NVMe) or sampled sectors are all-zero (HDD expectation). | HDD final pass pattern not zeroing (for example `nnsa`/`dod`), or read/I/O sampling issues. |
 
 ## Project Overview
 
@@ -156,57 +220,9 @@ securewipe/
 └── state/                       # Operation state files (JSON)
 ```
 
-## Development Phases
+## Current Focus Checklist
 
-### Phase 1: Foundation (~15h) — COMPLETE
-**Goal:** Drive detection + CLI infrastructure
-
-**Build Order:**
-1. `modules/config.py` — Configuration structure & logging setup
-2. `modules/drive_detection.py` — Hardware enumeration (lsblk, smartctl parsing)
-3. `main.py` — CLI menu, drive selection, confirmation prompts
-
-**Deliverables:**
-- Working drive detection and metadata collection
-- CLI menu for safe drive selection
-- Test on real hardware validates approach
-
-### Phase 2: Wipe Engine + Recovery (~35h) — COMPLETE
-**Goal:** Functional cryptographic wipe with resumable state
-
-**Build Order:**
-1. `modules/wipe_engine.py` — LUKS2 orchestration, HDD overwrite
-2. `modules/recovery.py` — State tracking, interruption recovery
-
-**Deliverables:**
-- Full wipe workflow (encryption → write → verification)
-- State persistence for incomplete operations
-- Resumption logic
-
-### Phase 3: Verification, Reporting, and Upload (~25h) — COMPLETE
-**Goal:** Post-wipe validation & audit trail
-
-**Build Order:**
-1. `modules/verification.py` — Header removal, SMART checks
-2. `modules/reporting.py` — JSON + text report generation
-3. `modules/uploader.py` — Git repository integration
-
-**Deliverables:**
-- Comprehensive post-wipe validation
-- Structured audit reports
-- Git-based operational traceability
-
-### Phase 4: Hardening (~15h) — IN PROGRESS
-**Goal:** Error handling, edge cases, stability
-
-- Comprehensive error handling (all modules)
-- Interruption recovery workflows
-- Edge case testing
-- Documentation finalization and runbook polish
-
-## Hardening Readiness Checklist
-
-Before moving from `dev` toward release hardening, confirm:
+Before release hardening sign-off, confirm:
 
 - [x] Core modules implemented (`config`, `drive_detection`, `wipe_engine`, `recovery`, `verification`, `reporting`, `uploader`)
 - [x] End-to-end orchestration in `main.py`
@@ -268,7 +284,7 @@ main (production-stable)
 ```
 feature: Add drive detection module
 fix: Resolve permission error in wipe engine
-docs: Update README with phase 1 status
+docs: Refresh README operational guidance
 chore: Update requirements.txt with new dependency
 ```
 
@@ -343,7 +359,6 @@ git config --global user.email "your_email@example.com"
 - Upload workflow currently targets a single Git remote and branch per configuration.
 - No GUI is provided; operation is terminal-driven by design.
 - Parallel drive wiping is intentionally out of scope.
-- Dedicated operator maintenance commands for stale lock/state cleanup are not yet implemented.
 
 ## Runtime Path Notes
 
@@ -405,7 +420,7 @@ By completing this project, you'll demonstrate:
 
 ## Author
 
-Matt Behrens
+Matthew Behrens
 
 ---
 

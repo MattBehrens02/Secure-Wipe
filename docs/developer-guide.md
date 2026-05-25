@@ -58,6 +58,39 @@ This guide documents module responsibilities, development workflow, test strateg
   - `dev`: `/app/...` defaults (container-first)
   - `prod`: repository-local directories (`logs`, `reports`, `state`, `tmp`)
 
+### User-Facing Configuration Matrix
+
+The keys below are accepted from `configuration.toml`; unknown keys are rejected.
+
+| Table | Keys |
+|-------|------|
+| `paths` | `output_root` |
+| `runtime` | `environment`, `dry_run`, `timezone` |
+| `safety` | `removable_drive_mode`, `mount_handling_mode`, `confirmation_steps` |
+| `drive_detection` | `collect_smart_info` |
+| `recovery` | `checkpoint_interval_seconds`, `max_resume_attempts`, `lock_file_path`, `lock_stale_seconds`, `resume_state_max_age_seconds`, `allow_failed_resume` |
+| `wipe` | `container_scrub_pattern`, `hdd_final_scrub_pattern` |
+| `reporting` | `formats`, `detail_level` |
+| `upload` | `enabled`, `repo`, `branch`, `retry_count`, `ssh_private_key_path` |
+| `logging` | `enabled`, `level` |
+
+### Reporting Detail-Level Behavior
+
+| Detail Level | JSON Output | Text Output | Notes |
+|-------------|-------------|-------------|-------|
+| `minimal` | High-level run status and basic drive identity | Compact status-oriented sections | Best for quick operational checks |
+| `standard` | Includes wipe method and verification check names (`checks_passed`, `checks_failed`) | Includes passed/failed check name lists | Default troubleshooting view |
+| `verbose` | Adds step timings, verification errors, and full recovery details | Adds timeline and deep diagnostics | Preferred for incident analysis |
+
+### Verification Check Names
+
+Post-wipe verification currently executes three checks in sequence:
+- `luks_header_destroyed`
+- `filesystem_signatures_absent`
+- `random_sector_sampling`
+
+If operator output says for example "2 passed, 1 failed", the failed check name is now present in standard and verbose reports.
+
 ## Hardening Checklist for Contributors
 - Avoid silent failure paths.
 - Emit clear operator-facing error messages.

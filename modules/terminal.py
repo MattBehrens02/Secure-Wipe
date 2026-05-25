@@ -6,6 +6,8 @@ All methods are static and return a list of arguments for safe use with subproce
 
 
 import subprocess
+import os
+import shutil
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -29,18 +31,43 @@ class CommandResult:
     stderr: str
 
 
+def get_adaptive_menu_width(
+    *,
+    min_width: int = 88,
+    default_width: int = 108,
+    max_width: int = 120,
+    margin: int = 4,
+) -> int:
+    """Return a terminal-aware menu width clamped to a safe range."""
+    fallback_columns = max(default_width + margin, min_width + margin)
+    try:
+        columns = shutil.get_terminal_size(fallback=(fallback_columns, 24)).columns
+    except OSError:
+        columns = fallback_columns
+
+    usable = max(1, int(columns) - int(margin))
+    return max(min_width, min(max_width, usable))
+
+
 def run_command(
     args: list[str],
     timeout: int | None = None,
     check: bool = False,
     progress_callback: Callable[[float], None] | None = None,
+    env: dict[str, str] | None = None,
 ) -> CommandResult:
     try:
+        merged_env = None
+        if env is not None:
+            merged_env = os.environ.copy()
+            merged_env.update(env)
+
         process = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=merged_env,
         )
     except OSError as exc:
         raise CommandRunnerError(f"failed to execute {' '.join(args)}: {exc}") from exc

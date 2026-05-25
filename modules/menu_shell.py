@@ -1,11 +1,14 @@
 from modules import version
 from modules.config import load_config
 from modules import recovery
+from modules.terminal import get_adaptive_menu_width
 from pathlib import Path
 from datetime import datetime, timezone
 import subprocess
 
-MENU_WIDTH = 80 # The width of the menu shell, feel free to adjust as needed
+MENU_WIDTH_MIN = 88
+MENU_WIDTH_DEFAULT = 108
+MENU_WIDTH_MAX = 120
 
 MENU_OPTIONS = [
     "Start Job",
@@ -15,25 +18,40 @@ MENU_OPTIONS = [
     "Maintenance",
 ]
 
-def print_line():
-    print("+" + "-" * (MENU_WIDTH - 2) + "+")
 
-def header():
-    print_line()
-    
-    #calculate the padding for centering the header
-    header_padding = (MENU_WIDTH - 2 - len(version.AppVersion.app_name + " - " + version.AppVersion.app_version)) // 2
-    header_line = "|" + " " * header_padding + version.AppVersion.app_name + " - " + version.AppVersion.app_version + " " * (MENU_WIDTH - 2 - header_padding - len(version.AppVersion.app_name + " - " + version.AppVersion.app_version)) + "|"
-    print(header_line)
+def _menu_row(width: int, text: str = "") -> None:
+    print("|" + str(text)[: width - 2].ljust(width - 2) + "|")
 
-    print_line()
 
-def environment_info():
+def _section_title(width: int, title: str) -> None:
+    content = f" {title} "
+    padding = max(0, (width - 2 - len(content)) // 2)
+    _menu_row(width, " " * padding + content)
+
+def _menu_width() -> int:
+    return get_adaptive_menu_width(
+        min_width=MENU_WIDTH_MIN,
+        default_width=MENU_WIDTH_DEFAULT,
+        max_width=MENU_WIDTH_MAX,
+    )
+
+
+def print_line(width: int):
+    print("+" + "-" * (width - 2) + "+")
+
+def header(width: int):
+    print_line(width)
+    _section_title(width, "SecureWipe Operations Console")
+    title = version.AppVersion.app_name + " - " + version.AppVersion.app_version
+    _section_title(width, title)
+    print_line(width)
+
+def environment_info(width: int):
     config = load_config()
-    env = config.runtime.environment
     dry_run = "ON" if config.runtime.dry_run else "OFF"
     upload_enabled = "ON" if config.upload.enabled else "OFF"
     logging_level = config.logging.level.upper()
+    current_time = datetime.now().strftime("%b %d, %Y %I:%M %p")
 
     state_dir = getattr(getattr(config, "paths", object()), "state_dir", "./state")
     reports_dir = Path(getattr(getattr(config, "paths", object()), "reports_dir", "./reports"))
@@ -59,34 +77,40 @@ def environment_info():
         except OSError:
             lock_needs_clear = "YES"
 
-    column_width = (MENU_WIDTH - 2 - 4) // 2
+    column_width = (width - 2 - 4) // 2
     info_rows = [
-        (f" Environment: {env}", f"Dry Run: {dry_run}"),
+        (f" Current Time: {current_time}", f"Dry Run: {dry_run}"),
         (f" Upload Enabled: {upload_enabled}", f"Logging Level: {logging_level}"),
         (f" Pending States: {pending_states}", f"Pending Uploads: {pending_uploads}"),
         (f" Lock Needs Clear: {lock_needs_clear}", ""),
     ]
 
+    _section_title(width, "System Status")
+    print_line(width)
+
     for left, right in info_rows:
         inner = f"{left.ljust(column_width)} || {right.ljust(column_width)}"
-        print("|" + inner + "|")
+        _menu_row(width, inner)
 
-    print_line()
+    print_line(width)
 
-def print_options():
+def print_options(width: int):
+    _section_title(width, "Actions")
+    print_line(width)
+
     for idx, option in enumerate(MENU_OPTIONS, start=1):
         option_line = f" [{idx}] {option}"
-        print("|" + option_line.ljust(MENU_WIDTH - 2) + "|")
+        _menu_row(width, option_line)
 
     quit_option = " [Q] Quit"
-
-    print("|" + quit_option + " " * (MENU_WIDTH - 2 - len(quit_option)) + "|")
-    print_line()
+    _menu_row(width, quit_option)
+    print_line(width)
 
 def print_menu():
-    header()
-    environment_info()
-    print_options()
+    width = _menu_width()
+    header(width)
+    environment_info(width)
+    print_options(width)
 
 
 def _clear_if_prod() -> None:

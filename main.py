@@ -5,29 +5,85 @@ from types import SimpleNamespace
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check, menu_shell
 from modules import smartctl
 from modules import app_logging
-from modules.terminal import TerminalUI
+from modules.terminal import TerminalUI, get_adaptive_menu_width
 
 
-SUBMENU_WIDTH = 80
+SUBMENU_WIDTH_MIN = 88
+SUBMENU_WIDTH_DEFAULT = 108
+SUBMENU_WIDTH_MAX = 120
 REPORTS_PAGE_SIZE = 20
 
 
-def _submenu_line() -> None:
-	print("+" + "-" * (SUBMENU_WIDTH - 2) + "+")
+def _normalize_nav_input(raw_value: str) -> str:
+	return str(raw_value or "").strip().lower()
+
+
+def _parse_submenu_input(
+	raw_value: str,
+	option_count: int,
+	*,
+	allow_paging: bool = False,
+) -> tuple[str, int | None]:
+	"""Parse shared submenu navigation commands.
+
+	Returns:
+		(action, selected_index)
+		- action: one of 'select', 'back', 'next_page', 'prev_page', 'invalid'
+		- selected_index: zero-based index when action == 'select', else None
+	"""
+	value = _normalize_nav_input(raw_value)
+	if value in {"r", "b", "back", "return"}:
+		return "back", None
+
+	if allow_paging and value in {"n", "f", "next", "forward", ">"}:
+		return "next_page", None
+	if allow_paging and value in {"p", "prev", "previous", "<"}:
+		return "prev_page", None
+
+	if value.isdigit():
+		selected_index = int(value) - 1
+		if 0 <= selected_index < option_count:
+			return "select", selected_index
+
+	return "invalid", None
+
+
+def _submenu_width() -> int:
+	return get_adaptive_menu_width(
+		min_width=SUBMENU_WIDTH_MIN,
+		default_width=SUBMENU_WIDTH_DEFAULT,
+		max_width=SUBMENU_WIDTH_MAX,
+	)
+
+
+def _submenu_line(width: int) -> None:
+	print("+" + "-" * (width - 2) + "+")
+
+
+def _submenu_row(width: int, text: str = "") -> None:
+	print("|" + str(text)[: width - 2].ljust(width - 2) + "|")
+
+
+def _submenu_section_title(width: int, title: str) -> None:
+	content = f" {title} "
+	padding = max(0, (width - 2 - len(content)) // 2)
+	_submenu_row(width, " " * padding + content)
 
 
 def _print_submenu(title: str, options: list[str], footer: str) -> None:
-	_submenu_line()
-	title_content = f" {title} "
-	title_padding = max(0, (SUBMENU_WIDTH - 2 - len(title_content)) // 2)
-	print("|" + " " * title_padding + title_content.ljust(SUBMENU_WIDTH - 2 - title_padding) + "|")
-	_submenu_line()
+	width = _submenu_width()
+	_submenu_line(width)
+	_submenu_section_title(width, title)
+	_submenu_line(width)
+	_submenu_section_title(width, "Options")
+	_submenu_line(width)
 	for index, option in enumerate(options, start=1):
 		label = f" [{index}] {option}"
-		print("|" + label.ljust(SUBMENU_WIDTH - 2) + "|")
-	_submenu_line()
-	print("|" + f" {footer}".ljust(SUBMENU_WIDTH - 2) + "|")
-	_submenu_line()
+		_submenu_row(width, label)
+	_submenu_line(width)
+	_submenu_section_title(width, "Navigation")
+	_submenu_row(width, f" {footer}")
+	_submenu_line(width)
 
 
 def _recovery_settings(app_config):
@@ -83,19 +139,18 @@ def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] |
 	while True:
 		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
 			terminal_ui.clear()
-		_print_submenu("Pending Jobs", choices, "Enter number or R to return")
+		_print_submenu("Pending Jobs", choices, "Enter number or B/R to return")
 		if not terminal_ui.interactive:
 			selected_index = 0
 			break
 		user_input = input("Select pending job: ").strip()
-		if user_input.lower() == "r":
+		action, selected_index = _parse_submenu_input(user_input, len(choices), allow_paging=False)
+		if action == "back":
 			app_logging.log_info("User returned to main menu from pending restart list")
 			return None
-		if user_input.isdigit():
-			selected_index = int(user_input) - 1
-			if 0 <= selected_index < len(choices):
-				break
-		print("Invalid selection. Enter a listed number or R.")
+		if action == "select" and selected_index is not None:
+			break
+		print("Invalid selection. Enter a listed number or B/R.")
 
 	selected_state = resume_candidates_sorted[selected_index]
 	metadata = selected_state.metadata if isinstance(selected_state.metadata, dict) else {}
@@ -137,7 +192,7 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 		end = start + REPORTS_PAGE_SIZE
 		page_reports = report_paths[start:end]
 		options = [path.name for path in page_reports]
-		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P to navigate, R to return"
+		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P page, B/R return"
 		_print_submenu("Report Viewer", options, footer)
 
 		if not terminal_ui.interactive:
@@ -146,24 +201,20 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 			selected_path = page_reports[0]
 		else:
 			user_input = input("Select report: ").strip()
-			lowered = user_input.lower()
-			if lowered == "r":
+			action, selected_index = _parse_submenu_input(user_input, len(page_reports), allow_paging=True)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from report viewer")
 				return
-			if lowered == "n":
+			if action == "next_page":
 				if page_index < page_count - 1:
 					page_index += 1
 				continue
-			if lowered == "p":
+			if action == "prev_page":
 				if page_index > 0:
 					page_index -= 1
 				continue
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number, N, P, or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(page_reports):
-				print("Invalid selection. Enter a number from the current page.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number, N/P for pages, or B/R to return.")
 				continue
 			selected_path = page_reports[selected_index]
 
@@ -208,21 +259,18 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			f"Cycle Container Scrub Pattern (currently: {wipe_cfg.container_scrub_pattern})",
 			f"Cycle HDD Final Pattern (currently: {wipe_cfg.hdd_final_scrub_pattern})",
 		]
-		_print_submenu("Configuration", choices, "Enter number or R to return")
+		_print_submenu("Configuration", choices, "Enter number or B/R to return")
 
 		if not terminal_ui.interactive:
 			selected_index = 0
 		else:
 			user_input = input("Select configuration action: ").strip()
-			if user_input.lower() == "r":
+			action, selected_index = _parse_submenu_input(user_input, len(choices), allow_paging=False)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from configuration menu")
 				return app_config
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(choices):
-				print("Invalid selection. Enter a listed number or R.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number or B/R.")
 				continue
 
 		choice = choices[selected_index]
@@ -280,21 +328,18 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 	while True:
 		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
 			terminal_ui.clear()
-		_print_submenu("Maintenance", choices, "Enter number or R to return")
+		_print_submenu("Maintenance", choices, "Enter number or B/R to return")
 
 		if not terminal_ui.interactive:
 			selected_index = 0
 		else:
 			user_input = input("Select maintenance action: ").strip()
-			if user_input.lower() == "r":
+			action, selected_index = _parse_submenu_input(user_input, len(choices), allow_paging=False)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from maintenance menu")
 				return
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(choices):
-				print("Invalid selection. Enter a listed number or R.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number or B/R.")
 				continue
 
 		confirmation = "CLEAR" if terminal_ui.interactive else "CLEAR"

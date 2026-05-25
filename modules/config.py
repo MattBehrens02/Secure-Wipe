@@ -62,6 +62,7 @@ class UploadConfig:
     repo: Optional[str] = None
     branch: str = "main"
     retry_count: int = 3
+    ssh_private_key_path: Optional[str] = None
 
 @dataclass
 class LoggingConfig:
@@ -99,7 +100,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     },
     "wipe": {"container_scrub_pattern", "hdd_final_scrub_pattern"},
     "reporting": {"formats", "detail_level"},
-    "upload": {"enabled", "repo", "branch", "retry_count"},
+    "upload": {"enabled", "repo", "branch", "retry_count", "ssh_private_key_path"},
     "logging": {"enabled", "level"},
 }
 
@@ -228,6 +229,9 @@ def _apply_upload_overrides(config: AppConfig, upload_data: dict[str, Any]) -> N
         config.upload.branch = str(upload_data["branch"])
     if "retry_count" in upload_data:
         config.upload.retry_count = int(upload_data["retry_count"])
+    if "ssh_private_key_path" in upload_data:
+        value = str(upload_data["ssh_private_key_path"]).strip()
+        config.upload.ssh_private_key_path = value or None
         
 
 def _apply_logging_overrides(config: AppConfig, logging_data: dict[str, Any]) -> None:
@@ -298,6 +302,12 @@ def _validate_config(config: AppConfig) -> None:
     valid_detail_levels = {"minimal", "standard", "verbose"}
     if config.reporting.detail_level not in valid_detail_levels:
         raise ValueError("reporting.detail_level must be one of: minimal, standard, verbose")
+
+    if config.upload.retry_count <= 0:
+        raise ValueError("upload.retry_count must be > 0")
+
+    if config.upload.ssh_private_key_path is not None and not str(config.upload.ssh_private_key_path).strip():
+        raise ValueError("upload.ssh_private_key_path must be a non-empty string when provided")
 
 
 def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
@@ -402,6 +412,7 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
             "repo": config.upload.repo or "",
             "branch": config.upload.branch,
             "retry_count": config.upload.retry_count,
+            "ssh_private_key_path": config.upload.ssh_private_key_path or "",
         },
         "logging": {
             "enabled": config.logging.enabled,

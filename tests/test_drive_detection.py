@@ -86,6 +86,25 @@ class TestDriveDetection(unittest.TestCase):
         selected = get_user_input(drives, terminal_ui)
         self.assertEqual([d.path for d in selected], ["/dev/sda", "/dev/sdb"])
 
+    @patch("builtins.input", side_effect=["f", "11"])
+    def test_get_user_input_supports_forward_paging(self, _mock_input):
+        terminal_ui = Mock()
+        drives = [
+            Drive(f"d{idx}", f"/dev/sd{idx}", "1T", "", "", "", "disk", [], False, "sata", True)
+            for idx in range(12)
+        ]
+        selected = get_user_input(drives, terminal_ui)
+        self.assertEqual([d.path for d in selected], ["/dev/sd10"])
+
+    @patch("builtins.input", return_value="b")
+    def test_get_user_input_supports_back_command(self, _mock_input):
+        terminal_ui = Mock()
+        drives = [
+            Drive("a", "/dev/sda", "1T", "", "", "", "disk", [], False, "sata", True),
+        ]
+        selected = get_user_input(drives, terminal_ui)
+        self.assertEqual(selected, [])
+
     @patch("builtins.input", side_effect=["y", "wipe"])
     def test_confirm_all_drives_two_steps_success(self, _mock_input):
         cfg = SimpleNamespace(safety=SimpleNamespace(confirmation_steps=2))

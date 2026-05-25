@@ -33,7 +33,8 @@ class WipeReport:
 	drive_removable: bool = False
 	encryption: str = "LUKS2"
 	key_size_bits: int = 256
-	scrub_pattern: str = "nnsa"
+	scrub_pattern: str = "fillzero"
+	hdd_final_scrub_pattern: str = "fillzero"
 	hdd_final_pass: bool = False
 	status: str = "unknown"
 	started_at: Optional[str] = None
@@ -193,6 +194,14 @@ def generate_wipe_report(
 	# Determine if HDD based on media_type
 	media_type = getattr(drive, "media_type", "Unknown")
 	is_hdd = media_type.upper() == "HDD"
+
+	wipe_cfg = getattr(app_config, "wipe", object())
+	container_scrub_pattern = str(
+		getattr(wipe_cfg, "container_scrub_pattern", "fillzero")
+	).strip().lower() or "fillzero"
+	hdd_final_scrub_pattern = str(
+		getattr(wipe_cfg, "hdd_final_scrub_pattern", "fillzero")
+	).strip().lower() or "fillzero"
 	
 	# Extract wipe result metadata
 	status = getattr(wipe_result, "status", "unknown")
@@ -238,7 +247,8 @@ def generate_wipe_report(
 		drive_removable=bool(getattr(drive, "removable", False)),
 		encryption="LUKS2",
 		key_size_bits=256,
-		scrub_pattern="nnsa",
+		scrub_pattern=container_scrub_pattern,
+		hdd_final_scrub_pattern=hdd_final_scrub_pattern,
 		hdd_final_pass=is_hdd,
 		status=status,
 		started_at=started_at,
@@ -313,6 +323,7 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 			"encryption": report.encryption,
 			"key_size_bits": report.key_size_bits,
 			"scrub_pattern": report.scrub_pattern,
+			"hdd_final_scrub_pattern": report.hdd_final_scrub_pattern,
 			"hdd_final_pass": report.hdd_final_pass,
 		}
 		base_report["wipe_status"].update(
@@ -325,6 +336,8 @@ def _serialize_wipe_report(report: WipeReport, detail_level: str = "verbose") ->
 			{
 				"checks_passed_count": len(report.verification_checks_passed),
 				"checks_failed_count": len(report.verification_checks_failed),
+				"checks_passed": report.verification_checks_passed,
+				"checks_failed": report.verification_checks_failed,
 			}
 		)
 		base_report["recovery"].update(
@@ -403,8 +416,11 @@ def wipe_report_to_text(report: WipeReport, detail_level: str = "verbose") -> st
 	if level in {"standard", "verbose"}:
 		lines.append("WIPE METHOD")
 		lines.append(f"  Encryption:     {report.encryption} ({report.key_size_bits}-bit AES)")
-		lines.append(f"  Overwrite:      {report.scrub_pattern.upper()} multi-pass")
-		lines.append(f"  HDD Final Pass: {'Yes (HDD detected)' if report.hdd_final_pass else 'No (SSD detected)'}")
+		lines.append(f"  Container Scrub: {report.scrub_pattern}")
+		if report.hdd_final_pass:
+			lines.append(f"  HDD Final Scrub: {report.hdd_final_scrub_pattern} (executed)")
+		else:
+			lines.append(f"  HDD Final Scrub: {report.hdd_final_scrub_pattern} (not executed; non-HDD)")
 		lines.append("")
 	
 	# Wipe results
@@ -472,8 +488,14 @@ def wipe_report_to_text(report: WipeReport, detail_level: str = "verbose") -> st
 	
 	if level in {"standard", "verbose"} and report.verification_checks_passed:
 		lines.append(f"  Passed:     {len(report.verification_checks_passed)} checks")
+		lines.append("  Passed Checks:")
+		for check_name in report.verification_checks_passed:
+			lines.append(f"    - {check_name}")
 	if level in {"standard", "verbose"} and report.verification_checks_failed:
 		lines.append(f"  Failed:     {len(report.verification_checks_failed)} checks")
+		lines.append("  Failed Checks:")
+		for check_name in report.verification_checks_failed:
+			lines.append(f"    - {check_name}")
 	
 	if report.status == "failed":
 		lines.append("  Reason:     Wipe operation failed before verification could execute")

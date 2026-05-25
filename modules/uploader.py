@@ -79,11 +79,34 @@ class UploadQueue:
 class GitUploader:
     """Handles git operations for report upload."""
 
-    def __init__(self, repo_url: str, repo_path: Path, branch: str = "main"):
+    def __init__(
+        self,
+        repo_url: str,
+        repo_path: Path,
+        branch: str = "main",
+        ssh_private_key_path: Optional[str] = None,
+    ):
         """Initialize uploader with target repo and branch."""
         self.repo_url = repo_url
         self.repo_path = repo_path
         self.branch = branch
+        self.ssh_private_key_path = ssh_private_key_path.strip() if ssh_private_key_path else None
+
+    def _git_env(self) -> dict[str, str] | None:
+        """Build optional environment overrides for git commands."""
+        if not self.ssh_private_key_path:
+            return None
+
+        key_path = Path(self.ssh_private_key_path).expanduser()
+        if not key_path.is_file():
+            raise UploadError(f"SSH private key not found: {key_path}")
+
+        return {
+            "GIT_SSH_COMMAND": (
+                f"ssh -i {key_path} -o IdentitiesOnly=yes "
+                "-o StrictHostKeyChecking=accept-new"
+            )
+        }
 
     def ensure_repo_initialized(self) -> None:
         """Clone repo if missing, or verify existing clone is valid."""
@@ -95,11 +118,13 @@ class GitUploader:
     def _clone_repo(self) -> None:
         """Clone the repository from remote URL."""
         self.repo_path.parent.mkdir(parents=True, exist_ok=True)
+        git_env = self._git_env()
         try:
             run_command(
                 ["git", "clone", "--depth", "1", "--branch", self.branch, self.repo_url, str(self.repo_path)],
                 timeout=60,
                 check=True,
+                env=git_env,
             )
             log_info(f"Cloned repository: {self.repo_url}")
         except (CommandRunnerError, CommandRunnerTimeout) as exc:
@@ -117,6 +142,8 @@ class GitUploader:
             return False
 
         try:
+            git_env = self._git_env()
+
             # Change to repo directory for all git operations
             for report_path in report_paths:
                 if not report_path.exists():
@@ -135,6 +162,7 @@ class GitUploader:
                 ["git", "-C", str(self.repo_path), "add", "reports/"],
                 timeout=30,
                 check=True,
+                env=git_env,
             )
 
             # Commit with provided message
@@ -142,6 +170,7 @@ class GitUploader:
                 ["git", "-C", str(self.repo_path), "commit", "-m", message],
                 timeout=30,
                 check=False,  # Commit may fail if no changes
+                env=git_env,
             )
             log_info(f"Committed reports to local repository")
             return True
@@ -152,12 +181,19 @@ class GitUploader:
 
     def push_to_remote(self, max_retries: int = 3) -> bool:
         """Push commits to remote with exponential backoff retry. Returns True on success."""
+        try:
+            git_env = self._git_env()
+        except UploadError as exc:
+            log_error(str(exc))
+            return False
+
         for attempt in range(max_retries):
             try:
                 run_command(
                     ["git", "-C", str(self.repo_path), "push", "origin", self.branch],
                     timeout=60,
                     check=True,
+                    env=git_env,
                 )
                 log_info(f"Successfully pushed reports to remote branch: {self.branch}")
                 return True
@@ -256,9 +292,15 @@ def flush_pending_reports(app_config: Any, dry_run: bool = False) -> bool:
     queue = UploadQueue(reports_dir=reports_dir, queue_file=queue_file)
     branch = getattr(upload_cfg, "branch", "main")
     retry_count = int(getattr(upload_cfg, "retry_count", 3))
+    ssh_private_key_path = getattr(upload_cfg, "ssh_private_key_path", None)
 
     try:
-        uploader = GitUploader(repo_url, repo_path, branch=branch)
+        uploader = GitUploader(
+            repo_url,
+            repo_path,
+            branch=branch,
+            ssh_private_key_path=ssh_private_key_path,
+        )
     except UploadError as exc:
         log_error(f"Failed to initialize uploader: {exc}")
         return False
@@ -310,9 +352,15 @@ def upload_reports(
     # Initialize git uploader
     branch = getattr(upload_cfg, "branch", "main")
     retry_count = int(getattr(upload_cfg, "retry_count", 3))
+    ssh_private_key_path = getattr(upload_cfg, "ssh_private_key_path", None)
 
     try:
-        uploader = GitUploader(repo_url, repo_path, branch=branch)
+        uploader = GitUploader(
+            repo_url,
+            repo_path,
+            branch=branch,
+            ssh_private_key_path=ssh_private_key_path,
+        )
     except UploadError as exc:
         log_error(f"Failed to initialize uploader: {exc}")
         return False
