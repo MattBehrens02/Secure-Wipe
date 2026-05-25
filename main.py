@@ -1,4 +1,6 @@
 import sys
+import os
+import subprocess
 import tomllib
 from types import SimpleNamespace
 
@@ -380,6 +382,23 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 			app_logging.log_info(f"Maintenance cleared {cleared_count} incomplete recovery state(s)")
 
 
+def _open_operator_shell(terminal_ui: TerminalUI) -> None:
+	"""Temporarily drop to operator shell and return to app on exit."""
+	shell = os.environ.get("SHELL", "/bin/bash")
+
+	terminal_ui.exit_alt_screen()
+	try:
+		print("Opening terminal. Type 'exit' to return to SecureWipe.")
+		completed = subprocess.run([shell], check=False)
+		if completed.returncode != 0:
+			print(f"Terminal exited with status {completed.returncode}.")
+	except OSError as exc:
+		print(f"Failed to open terminal: {exc}")
+		app_logging.log_error(f"Operator shell launch failed: {exc}")
+	finally:
+		terminal_ui.enter_alt_screen()
+
+
 def main(interactive: bool = False) -> int:
 	try:
 		app_config = config.load_config()
@@ -406,7 +425,7 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3, 4, 5}:
+				if menu_choice not in {1, 2, 3, 4, 5, 6}:
 					print("Invalid menu selection.")
 					return 1
 
@@ -424,6 +443,12 @@ def main(interactive: bool = False) -> int:
 
 				if menu_choice == 5:
 					_maintenance_menu(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
+
+				if menu_choice == 6:
+					_open_operator_shell(terminal_ui)
 					if interactive_menu:
 						continue
 					return 0

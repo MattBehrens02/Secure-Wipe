@@ -45,6 +45,8 @@ If running from host/venv, ensure configured runtime directories are writable (`
 	 - Restart Pending Jobs
 	 - View Reports
 	 - Configuration
+	 - Maintenance
+	 - Open Terminal
 5. Complete confirmation prompts for destructive operations.
 6. Wait for wipe + verification completion.
 7. Confirm report output paths displayed by the application.
@@ -75,6 +77,11 @@ The Configuration submenu currently supports:
 - Cycle reporting detail level (`minimal`/`standard`/`verbose`)
 - Cycle container scrub pattern (for encrypted container write stage)
 - Cycle HDD final scrub pattern (for direct-device final HDD pass)
+
+## Open Terminal Action
+- From the main menu, choose `Open Terminal` to launch a local shell.
+- Type `exit` to return to SecureWipe.
+- Use this for diagnostics and maintenance without disabling auto-start behavior.
 
 Configuration updates are persisted to `configuration.toml` after each successful change.
 

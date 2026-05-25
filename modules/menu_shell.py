@@ -17,6 +17,7 @@ MENU_OPTIONS = [
 	"View Reports",
 	"Configuration",
     "Maintenance",
+    "Open Terminal",
 ]
 
 
@@ -132,7 +133,7 @@ def run():
             decided = True
             return -1
 
-        elif option in {"1", "2", "3", "4", "5"}:
+        elif option in {"1", "2", "3", "4", "5", "6"}:
             decided = True
             return int(option)
 
