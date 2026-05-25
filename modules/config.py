@@ -99,7 +99,7 @@ _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
         "allow_failed_resume",
     },
     "wipe": {"container_scrub_pattern", "hdd_final_scrub_pattern"},
-    "reporting": {"formats", "detail_level"},
+    "reporting": {"formats", "detail_level", "operator_identifier"},
     "upload": {"enabled", "repo", "branch", "retry_count", "ssh_private_key_path"},
     "logging": {"enabled", "level"},
 }
@@ -218,6 +218,9 @@ def _apply_reporting_overrides(config: AppConfig, reporting_data: dict[str, Any]
         config.reporting.formats = list(reporting_data["formats"])
     if "detail_level" in reporting_data:
         config.reporting.detail_level = str(reporting_data["detail_level"]).lower()
+    if "operator_identifier" in reporting_data:
+        value = str(reporting_data["operator_identifier"]).strip()
+        config.reporting.operator_identifier = value or "unknown"
 
 
 def _apply_upload_overrides(config: AppConfig, upload_data: dict[str, Any]) -> None:
@@ -302,6 +305,9 @@ def _validate_config(config: AppConfig) -> None:
     valid_detail_levels = {"minimal", "standard", "verbose"}
     if config.reporting.detail_level not in valid_detail_levels:
         raise ValueError("reporting.detail_level must be one of: minimal, standard, verbose")
+
+    if not str(config.reporting.operator_identifier).strip():
+        raise ValueError("reporting.operator_identifier must be a non-empty string")
 
     if config.upload.retry_count <= 0:
         raise ValueError("upload.retry_count must be > 0")
@@ -406,6 +412,7 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
         "reporting": {
             "formats": list(config.reporting.formats),
             "detail_level": config.reporting.detail_level,
+            "operator_identifier": config.reporting.operator_identifier,
         },
         "upload": {
             "enabled": config.upload.enabled,

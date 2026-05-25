@@ -38,6 +38,7 @@ hdd_final_scrub_pattern = "fillzero"
 [reporting]
 formats = ["json", "txt"]  # json | txt
 detail_level = "standard"     # minimal | standard | verbose
+operator_identifier = "unknown"
 
 [upload]
 enabled = false  # Set to true to enable Git-based report upload

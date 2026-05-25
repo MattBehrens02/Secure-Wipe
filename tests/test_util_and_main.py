@@ -370,7 +370,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
             upload=SimpleNamespace(enabled=False),
             drive_detection=SimpleNamespace(collect_smart_info=True),
             logging=SimpleNamespace(level="info"),
-            reporting=SimpleNamespace(detail_level="verbose"),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="unknown"),
             paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
             recovery=SimpleNamespace(
                 lock_file_path="/tmp/state/wipe.lock",
@@ -393,6 +393,45 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.config.save_user_config")
     @patch("main.config.load_config")
     @patch("main.TerminalUI.from_config")
+    @patch("builtins.input", side_effect=["6", "tech_john", "r"])
+    def test_main_configuration_menu_sets_operator_identifier(
+        self,
+        _mock_input,
+        mock_ui_from_config,
+        mock_load_config,
+        mock_save_config,
+        _mock_menu_run,
+        _mock_isatty,
+    ):
+        cfg = SimpleNamespace(
+            runtime=SimpleNamespace(environment="test", dry_run=True),
+            upload=SimpleNamespace(enabled=False),
+            drive_detection=SimpleNamespace(collect_smart_info=True),
+            logging=SimpleNamespace(level="info"),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="unknown"),
+            wipe=SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero"),
+            paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
+            recovery=SimpleNamespace(
+                lock_file_path="/tmp/state/wipe.lock",
+                lock_stale_seconds=7200,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+        )
+        mock_load_config.return_value = cfg
+        mock_ui_from_config.return_value = Mock(interactive=True)
+
+        rc = main.main(interactive=True)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(cfg.reporting.operator_identifier, "tech_john")
+        mock_save_config.assert_called_once()
+
+    @patch("main.sys.stdin.isatty", return_value=True)
+    @patch("main.menu_shell.run", side_effect=[4, -1])
+    @patch("main.config.save_user_config")
+    @patch("main.config.load_config")
+    @patch("main.TerminalUI.from_config")
     @patch("builtins.input", side_effect=["b"])
     def test_main_configuration_menu_accepts_b_for_back(
         self,
@@ -408,7 +447,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
             upload=SimpleNamespace(enabled=False),
             drive_detection=SimpleNamespace(collect_smart_info=True),
             logging=SimpleNamespace(level="info"),
-            reporting=SimpleNamespace(detail_level="verbose"),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="unknown"),
             wipe=SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero"),
             paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
             recovery=SimpleNamespace(
@@ -431,7 +470,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
     @patch("main.config.save_user_config")
     @patch("main.config.load_config")
     @patch("main.TerminalUI.from_config")
-    @patch("builtins.input", side_effect=["6", "r"])
+    @patch("builtins.input", side_effect=["7", "r"])
     def test_main_configuration_menu_cycles_container_scrub_pattern(
         self,
         _mock_input,
@@ -446,7 +485,7 @@ class TestUtilitiesAndMain(unittest.TestCase):
             upload=SimpleNamespace(enabled=False),
             drive_detection=SimpleNamespace(collect_smart_info=True),
             logging=SimpleNamespace(level="info"),
-            reporting=SimpleNamespace(detail_level="verbose"),
+            reporting=SimpleNamespace(detail_level="verbose", operator_identifier="unknown"),
             wipe=SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero"),
             paths=SimpleNamespace(reports_dir="/tmp/reports", state_dir="/tmp/state"),
             recovery=SimpleNamespace(

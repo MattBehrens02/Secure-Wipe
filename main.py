@@ -238,6 +238,13 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 		wipe_cfg = SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero")
 		app_config.wipe = wipe_cfg
 
+	reporting_cfg = getattr(app_config, "reporting", None)
+	if reporting_cfg is None:
+		reporting_cfg = SimpleNamespace(detail_level="verbose", operator_identifier="unknown")
+		app_config.reporting = reporting_cfg
+	elif not hasattr(reporting_cfg, "operator_identifier"):
+		reporting_cfg.operator_identifier = "unknown"
+
 	pattern_order = ["fillzero", "random", "nnsa", "dod"]
 
 	def _cycle_pattern(current_value: str) -> str:
@@ -256,6 +263,7 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			f"Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
 			f"Toggle Logging Level (currently: {app_config.logging.level.upper()})",
 			f"Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
+			f"Set Operator Identifier (currently: {app_config.reporting.operator_identifier})",
 			f"Cycle Container Scrub Pattern (currently: {wipe_cfg.container_scrub_pattern})",
 			f"Cycle HDD Final Pattern (currently: {wipe_cfg.hdd_final_scrub_pattern})",
 		]
@@ -302,6 +310,16 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			next_index = (detail_levels.index(current) + 1) % len(detail_levels)
 			app_config.reporting.detail_level = detail_levels[next_index]
 			print(f"Report detail level is now {app_config.reporting.detail_level}.")
+		elif choice.startswith("Set Operator Identifier"):
+			if not terminal_ui.interactive:
+				print("Operator identifier can only be set interactively.")
+				continue
+			new_value = input("Enter operator identifier: ").strip()
+			if not new_value:
+				print("Operator identifier cannot be empty.")
+				continue
+			app_config.reporting.operator_identifier = new_value
+			print(f"Operator identifier is now {app_config.reporting.operator_identifier}.")
 		elif choice.startswith("Cycle Container Scrub Pattern"):
 			wipe_cfg.container_scrub_pattern = _cycle_pattern(wipe_cfg.container_scrub_pattern)
 			print(f"Container scrub pattern is now {wipe_cfg.container_scrub_pattern}.")
