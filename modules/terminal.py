@@ -180,7 +180,7 @@ class WipeCommands:
     def destroy_luks_header(device):
         """Build command to erase LUKS header from device."""
         return [
-            "cryptsetup", "erase", device
+            "cryptsetup", "erase", "--batch-mode", device
         ]
 
     @staticmethod

@@ -497,7 +497,14 @@ class WipeEngine:
             smart_before=self.smart_before,
         )
 
-    def _run_step_command(self, cmd, info_message: str, progress_device: str | None = None, expected_bytes: int | None = None):
+    def _run_step_command(
+        self,
+        cmd,
+        info_message: str,
+        progress_device: str | None = None,
+        expected_bytes: int | None = None,
+        timeout: int | None = None,
+    ):
         """Execute one command or print it when running in dry-run mode."""
         if self.dry_run:
             print("[DRY RUN]", " ".join(cmd))
@@ -571,7 +578,7 @@ class WipeEngine:
             rendered_progress = True
 
         try:
-            run_command(cmd, check=True, progress_callback=_emit_progress)
+            run_command(cmd, check=True, timeout=timeout, progress_callback=_emit_progress)
         finally:
             if rendered_progress:
                 sys.stdout.write("\n")
@@ -606,7 +613,9 @@ class WipeEngine:
         self._run_step_command(
             cmd,
             "[INFO] Scrubbing mapped device...",
-            progress_device=mapped_device,
+            # Measure throughput on the underlying target disk rather than the
+            # dm-crypt mapper so reported speed/ETA reflects the real hardware.
+            progress_device=self.path,
             expected_bytes=expected_bytes,
         )
 
@@ -618,7 +627,9 @@ class WipeEngine:
     def _destroy_luks2_container(self):
         """Erase LUKS metadata/header so the temporary encryption key path is gone."""
         cmd = WipeCommands.destroy_luks_header(self.path)
-        self._run_step_command(cmd, "[INFO] Destroying LUKS2 header...")
+        # Header/keyslot erase should complete quickly; bound it so the
+        # workflow cannot sit indefinitely on an interactive/device hang.
+        self._run_step_command(cmd, "[INFO] Destroying LUKS2 header...", timeout=120)
 
     def _remove_residual_signatures(self):
         """Remove any remaining filesystem signatures from the raw device."""
