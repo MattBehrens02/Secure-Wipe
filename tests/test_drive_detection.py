@@ -31,7 +31,7 @@ class TestDriveDetection(unittest.TestCase):
                 {
                     "name": "sda",
                     "path": "/dev/sda",
-                    "size": "1T",
+                    "size": "1000000000000",
                     "model": "Disk",
                     "vendor": "Vendor",
                     "serial": "SER",
@@ -47,6 +47,8 @@ class TestDriveDetection(unittest.TestCase):
         self.assertEqual(len(drives), 1)
         self.assertEqual(drives[0].path, "/dev/sda")
         self.assertEqual(drives[0].mountpoints, ["/mnt"])
+        self.assertEqual(drives[0].size_bytes, 1000000000000)
+        self.assertEqual(drives[0].size, "1.0T")
 
     def test_apply_safety_policy_filters_removable_and_mounted(self):
         cfg = SimpleNamespace(
@@ -70,6 +72,7 @@ class TestDriveDetection(unittest.TestCase):
         )
         payload = detect_drives()
         self.assertIn("blockdevices", payload)
+        self.assertEqual(mock_run.call_args.args[0][:3], ["lsblk", "--bytes", "--json"])
 
     @patch("modules.drive_detection.run_command", side_effect=CommandRunnerTimeout("x"))
     def test_detect_drives_timeout(self, _mock_run):

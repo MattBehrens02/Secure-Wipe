@@ -42,6 +42,7 @@ class Drive:
     removable: bool
     transport: str
     rotational: bool | None
+    size_bytes: int | None = None
     media_type: str = "Unknown"
     is_hdd: bool = False
     smart_data: dict[str, Any] | None = None
@@ -61,6 +62,32 @@ def _coerce_rotational(value: Any) -> bool | None:
         if lowered in {"0", "false", "no", "n"}:
             return False
     return None
+
+
+def _coerce_size_bytes(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        size_bytes = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return size_bytes if size_bytes > 0 else None
+
+
+def _format_display_size(size_bytes: int | None) -> str:
+    if size_bytes is None:
+        return ""
+
+    units = ["B", "K", "M", "G", "T", "P"]
+    size_value = float(size_bytes)
+    unit_index = 0
+    while size_value >= 1000 and unit_index < len(units) - 1:
+        size_value /= 1000.0
+        unit_index += 1
+
+    if unit_index == 0 or size_value >= 100:
+        return f"{size_value:.0f}{units[unit_index]}"
+    return f"{size_value:.1f}{units[unit_index]}"
 
 
 def _infer_media_type(drive: Drive) -> str:
@@ -192,11 +219,13 @@ def normalize_drive_data(drive_data: Any) -> Drive | None:
 
     raw_mountpoints = drive_data.get("mountpoints") or []
     mountpoints = [mp for mp in raw_mountpoints if mp] if isinstance(raw_mountpoints, list) else []
+    size_bytes = _coerce_size_bytes(drive_data.get("size"))
+    display_size = _format_display_size(size_bytes) or (drive_data.get("size", "") or "")
 
     normalized = Drive(
         name=drive_data.get("name", "") or "",
         path=drive_data.get("path", "") or "",
-        size=drive_data.get("size", "") or "",
+        size=display_size,
         model=(drive_data.get("model", "") or "").strip(),
         vendor=(drive_data.get("vendor", "") or "").strip(),
         serial=drive_data.get("serial", "") or "",
@@ -205,6 +234,7 @@ def normalize_drive_data(drive_data: Any) -> Drive | None:
         removable=bool(drive_data.get("rm", 0)),
         transport=drive_data.get("tran", "") or "",
         rotational=_coerce_rotational(drive_data.get("rota")),
+        size_bytes=size_bytes,
     )
 
     normalized.media_type = _infer_media_type(normalized)
@@ -413,7 +443,7 @@ def get_user_input(formatted_drives: list[Drive], terminal_ui: TerminalUI, app_c
 def detect_drives() -> dict[str, Any]:
     try:
         result = run_command(
-            ['lsblk', '--json', '--output', 'NAME,PATH,SIZE,MODEL,VENDOR,SERIAL,TYPE,MOUNTPOINTS,RM,TRAN,ROTA'],
+            ['lsblk', '--bytes', '--json', '--output', 'NAME,PATH,SIZE,MODEL,VENDOR,SERIAL,TYPE,MOUNTPOINTS,RM,TRAN,ROTA'],
             timeout=10,
             check=True,
         )

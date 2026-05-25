@@ -99,6 +99,20 @@ class TestVerificationChecks(unittest.TestCase):
         self.assertFalse(details["all_samples_zero"])
         self.assertEqual(details["expectation"], "informational")
 
+    def test_check_random_sector_sampling_uses_size_bytes_when_display_size_is_humanized(self):
+        with tempfile.NamedTemporaryFile(delete=False) as device_file:
+            device_file.write(b"A" * 8192)
+            device_path = device_file.name
+
+        self.addCleanup(lambda: os.remove(device_path) if os.path.exists(device_path) else None)
+        drive = SimpleNamespace(path=device_path, size="931.5G", size_bytes=8192, media_type="SSD")
+
+        passed, details = check_random_sector_sampling(drive, sample_ratio=1.0, block_size=4096)
+
+        self.assertTrue(passed)
+        self.assertEqual(details["sample_count"], 1)
+        self.assertEqual(details["expectation"], "informational")
+
 
 class TestVerifyWipe(unittest.TestCase):
     def setUp(self):
