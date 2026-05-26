@@ -47,9 +47,11 @@ This guide documents module responsibilities, development workflow, test strateg
 ## Menu and UX Notes
 - Top-level menu actions are defined in `modules/menu_shell.py`.
 - Submenu rendering and navigation rules are implemented in `main.py`.
+- Main menu input accepts numeric options only.
 - Submenu return key: `R`.
 - Report viewer pagination defaults to 20 entries per page with `N`/`P` navigation.
-- Current top-level actions include Configuration, Maintenance, Open Terminal, Shutdown System, and Restart System.
+- Log viewer pagination defaults to 20 entries per page with `N`/`P` navigation.
+- Current top-level actions include Start Job, Restart Pending Jobs, View Reports, View Logs, Configuration, Maintenance, Open Terminal, Shutdown System, and Restart System.
 
 ## Configuration Notes
 - User-facing keys are a whitelisted subset in `modules/config.py`.

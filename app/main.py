@@ -2,6 +2,7 @@ import sys
 import os
 import subprocess
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check, menu_shell
@@ -234,6 +235,79 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 			input("Press Enter to return to report list (or R at menu to exit)...")
 
 
+def _list_log_files(logs_dir: str) -> list[Path]:
+	log_dir_path = Path(logs_dir)
+	if not log_dir_path.exists():
+		return []
+	return sorted(
+		[path for path in log_dir_path.iterdir() if path.is_file()],
+		key=lambda path: path.stat().st_mtime,
+		reverse=True,
+	)
+
+
+def _open_log_with_pager(log_path: Path, terminal_ui: TerminalUI) -> None:
+	pager = os.environ.get("PAGER", "less")
+	terminal_ui.exit_alt_screen()
+	try:
+		completed = subprocess.run([pager, str(log_path)], check=False)
+		if completed.returncode != 0 and pager != "more":
+			subprocess.run(["more", str(log_path)], check=False)
+	except OSError as exc:
+		print(f"Failed to open pager for {log_path.name}: {exc}")
+		app_logging.log_error(f"Log pager open failed path={log_path} error={exc}")
+	finally:
+		terminal_ui.enter_alt_screen()
+
+
+def _view_logs(app_config, terminal_ui: TerminalUI) -> None:
+	logs_dir = getattr(getattr(app_config, "paths", object()), "logs_dir", "./logs")
+	log_paths = _list_log_files(logs_dir)
+
+	if not log_paths:
+		print(f"No logs found in {logs_dir}.")
+		app_logging.log_info(f"Log viewer opened with no logs in {logs_dir}")
+		return
+
+	page_index = 0
+	page_count = max(1, (len(log_paths) + REPORTS_PAGE_SIZE - 1) // REPORTS_PAGE_SIZE)
+	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
+		start = page_index * REPORTS_PAGE_SIZE
+		end = start + REPORTS_PAGE_SIZE
+		page_logs = log_paths[start:end]
+		options = [path.name for path in page_logs]
+		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P page, B/R return"
+		_print_submenu("Log Viewer", options, footer)
+
+		if not terminal_ui.interactive:
+			if not page_logs:
+				return
+			selected_path = page_logs[0]
+		else:
+			user_input = input("Select log: ").strip()
+			action, selected_index = _parse_submenu_input(user_input, len(page_logs), allow_paging=True)
+			if action == "back":
+				app_logging.log_info("User returned to main menu from log viewer")
+				return
+			if action == "next_page":
+				if page_index < page_count - 1:
+					page_index += 1
+				continue
+			if action == "prev_page":
+				if page_index > 0:
+					page_index -= 1
+				continue
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number, N/P for pages, or B/R to return.")
+				continue
+			selected_path = page_logs[selected_index]
+
+		app_logging.log_info(f"User opened log file in viewer path={selected_path}")
+		_open_log_with_pager(selected_path, terminal_ui)
+
+
 def _configure_settings(app_config, terminal_ui: TerminalUI):
 	wipe_cfg = getattr(app_config, "wipe", None)
 	if wipe_cfg is None:
@@ -452,7 +526,7 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3, 4, 5, 6, 7, 8}:
+				if menu_choice not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
 					print("Invalid menu selection.")
 					return 1
 
@@ -503,6 +577,12 @@ def main(interactive: bool = False) -> int:
 					if interactive_menu:
 						continue
 					return 1
+
+				if menu_choice == 9:
+					_view_logs(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
 
 				if menu_choice == 1:
 					pending_states = _pending_states(app_config)

@@ -5,6 +5,7 @@ app/tmp/
 app/state/
 out/
 build/
+tmp/
 
 # Python
 __pycache__/

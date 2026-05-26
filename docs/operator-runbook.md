@@ -44,6 +44,7 @@ If running from host/venv, ensure configured runtime directories are writable (`
 	 - Start Job
 	 - Restart Pending Jobs
 	 - View Reports
+	 - View Logs
 	 - Configuration
 	 - Maintenance
 	 - Open Terminal
@@ -56,10 +57,17 @@ If running from host/venv, ensure configured runtime directories are writable (`
 
 ## Submenu Controls
 - `B` or `R`: Return to the main menu from any submenu.
+- Main menu input accepts numeric options only.
 - Report viewer keys:
 	- Number: Open selected report from current page
 	- `N` or `F`: Next report page
 	- `P`: Previous report page
+	- `B` or `R`: Return to main menu
+
+- Log viewer keys:
+	- Number: Open selected log from current page
+	- `N` or `F`: Next log page
+	- `P`: Previous log page
 	- `B` or `R`: Return to main menu
 
 Drive selection keys:

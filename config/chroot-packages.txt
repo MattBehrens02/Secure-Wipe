@@ -8,6 +8,8 @@ iproute2
 live-boot
 live-boot-initramfs-tools
 linux-image-amd64
+less
+nano
 ntfs-3g
 python3
 scrub

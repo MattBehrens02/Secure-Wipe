@@ -15,6 +15,14 @@ class TestPowerMenu(unittest.TestCase):
 		with patch("builtins.input", return_value="8"):
 			self.assertEqual(menu_shell.run(), 8)
 
+	def test_menu_shell_accepts_view_logs_option(self):
+		with patch("builtins.input", return_value="9"):
+			self.assertEqual(menu_shell.run(), 9)
+
+	def test_menu_shell_rejects_q_and_reprompts(self):
+		with patch("builtins.input", side_effect=["q", "9"]):
+			self.assertEqual(menu_shell.run(), 9)
+
 	@patch("main.sys.stdin.isatty", return_value=True)
 	@patch("main.menu_shell.run", return_value=7)
 	@patch("main.subprocess.run", return_value=SimpleNamespace(returncode=0))
@@ -66,6 +74,29 @@ class TestPowerMenu(unittest.TestCase):
 		self.assertEqual(rc, 0)
 		mock_subprocess_run.assert_called_once_with(["systemctl", "reboot"], check=False)
 		mock_ui.exit_alt_screen.assert_called()
+
+	@patch("main.sys.stdin.isatty", return_value=True)
+	@patch("main.menu_shell.run", side_effect=[9, -1])
+	@patch("main.config.load_config")
+	@patch("main.TerminalUI.from_config")
+	def test_main_view_logs_option_invokes_log_viewer(
+		self,
+		mock_ui_from_config,
+		mock_load_config,
+		_mock_menu_run,
+		_mock_isatty,
+	):
+		cfg = SimpleNamespace(
+			runtime=SimpleNamespace(environment="test", dry_run=True),
+		)
+		mock_load_config.return_value = cfg
+		mock_ui_from_config.return_value = Mock(interactive=True)
+
+		with patch.object(main, "_view_logs") as mock_view_logs:
+			rc = main.main(interactive=True)
+
+		self.assertEqual(rc, 0)
+		mock_view_logs.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -191,4 +191,6 @@ Collect and retain:
 
 ## Menu Navigation Notes
 - Submenus use `R` to return to the main menu.
+- Main menu input accepts numeric options only.
 - Report viewer pagination uses `N`/`P` for navigation and numeric selection for opening entries.
+- Log viewer pagination uses `N`/`P` for navigation and numeric selection for opening entries.

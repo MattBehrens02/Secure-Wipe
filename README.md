@@ -19,7 +19,8 @@ Secure-Wipe/
 ├── scripts/
 │   ├── build-iso.sh             # Build live ISO
 │   ├── install-iso-to-usb.sh    # Write ISO + create data partition
-│   └── format-output-partition.sh
+│   ├── format-output-partition.sh
+│   └── update-iso-preserve-output.sh  # Refresh ISO while restoring output data backup
 ├── build/                       # Build artifacts (gitignored)
 └── out/                         # Final ISO output (gitignored)
 ```
@@ -111,6 +112,36 @@ sudo OUTPUT_FILESYSTEM=exfat OUTPUT_LABEL=SWOUTPUT WINDOWS_HIDE_BOOT_PARTITIONS=
 
 Current installer supports OUTPUT_FILESYSTEM=exfat for the integrated flow.
 
+## Update ISO While Preserving Output Data
+
+Use this script when you want to refresh the boot ISO on a USB device and restore existing `SWOUTPUT` data afterward:
+
+```bash
+sudo ./scripts/update-iso-preserve-output.sh out/secure-wipe-trixie-amd64.iso /dev/sdX
+```
+
+What this script does:
+1. Finds the current output partition (default label `SWOUTPUT`)
+2. Copies output data to a staging backup directory
+3. Runs the standard installer flow to rewrite the ISO and recreate partitions
+4. Restores the staged data to the newly created output partition
+5. Verifies restored file count/size against backup
+
+Optional flags:
+
+```bash
+sudo ./scripts/update-iso-preserve-output.sh \
+  --iso out/secure-wipe-trixie-amd64.iso \
+  --target /dev/sdX \
+  --staging-dir /path/to/staging \
+  --label SWOUTPUT \
+  --yes
+```
+
+Notes:
+- This script still invokes the base installer, so it rewrites the target disk and then restores backed-up output data.
+- It is intended as an update/repair helper for small output datasets.
+
 ## Manual Output Partition Formatting
 
 If needed, format a specific partition manually:
@@ -188,11 +219,14 @@ The app includes main menu actions for:
 - Start Job
 - Restart Pending Jobs
 - View Reports
+- View Logs
 - Configuration
 - Maintenance
 - Open Terminal
 - Shutdown System
 - Restart System
+
+Main menu navigation uses numeric options only.
 
 ## App Configuration
 

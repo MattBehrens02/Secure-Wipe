@@ -20,6 +20,7 @@ MENU_OPTIONS = [
     "Open Terminal",
     "Shutdown System",
     "Restart System",
+    "View Logs",
 ]
 
 
@@ -106,8 +107,6 @@ def print_options(width: int):
         option_line = f" [{idx}] {option}"
         _menu_row(width, option_line)
 
-    quit_option = " [Q] Quit"
-    _menu_row(width, quit_option)
     print_line(width)
 
 def print_menu():
@@ -130,12 +129,7 @@ def run():
         print_menu()
         option = input("  Select option: ")
 
-        if option.lower() == "q":
-            print("Exiting...")
-            decided = True
-            return -1
-
-        elif option in {"1", "2", "3", "4", "5", "6", "7", "8"}:
+        if option in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
             decided = True
             return int(option)
 
