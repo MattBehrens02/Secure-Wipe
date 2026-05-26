@@ -375,6 +375,57 @@ def _format_toml_value(value: Any) -> str:
     raise ValueError(f"Unsupported TOML value type: {type(value)!r}")
 
 
+_USER_CONFIG_TEMPLATES: dict[str, list[tuple[str, str | None]]] = {
+    "paths": [
+        ("output_root", "Optional persistent mount root for prod mode (e.g., /output)"),
+    ],
+    "runtime": [
+        ("environment", "dev | test | prod"),
+        ("dry_run", "true | false"),
+        ("timezone", "UTC | local | IANA zone (e.g., America/Chicago)"),
+    ],
+    "safety": [
+        ("removable_drive_mode", "deny (recommended) | allow"),
+        ("mount_handling_mode", "deny (recommended) | allow"),
+        (
+            "confirmation_steps",
+            '2 (recommended) | 1 | 0; 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm',
+        ),
+    ],
+    "drive_detection": [
+        ("collect_smart_info", "enabled by default; SMART collection is optional enrichment"),
+    ],
+    "recovery": [
+        ("checkpoint_interval_seconds", "checkpoint cadence for long-running steps"),
+        ("max_resume_attempts", "max resume retries before restart is required"),
+        ("lock_file_path", "runtime lock file path"),
+        ("lock_stale_seconds", "stale lock threshold (2 hours)"),
+        ("resume_state_max_age_seconds", "offer resume for states updated within 24 hours"),
+        ("allow_failed_resume", "resume interrupted by default; failed requires restart"),
+    ],
+    "wipe": [
+        ("container_scrub_pattern", "Common values: fillzero (fast single-pass), nnsa (harsher multi-pass)"),
+        ("hdd_final_scrub_pattern", "Common values: fillzero (fast single-pass), nnsa (harsher multi-pass)"),
+    ],
+    "reporting": [
+        ("formats", "json | txt"),
+        ("detail_level", "minimal | standard | verbose"),
+        ("operator_identifier", "operator label used in reports"),
+    ],
+    "upload": [
+        ("enabled", "Set to true to enable Git-based report upload"),
+        ("repo", "Git repository URL (e.g., git@github.com:user/private-repo.git)"),
+        ("branch", "Branch to push reports to"),
+        ("retry_count", "Number of retry attempts on network failure"),
+        ("ssh_private_key_path", "Optional SSH private key path for git auth (e.g., /home/its/.ssh/id_ed25519)"),
+    ],
+    "logging": [
+        ("enabled", "true | false"),
+        ("level", "info | errors"),
+    ],
+}
+
+
 def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
     """Build the user-editable TOML payload from AppConfig.
 
@@ -428,6 +479,14 @@ def _user_config_payload(config: AppConfig) -> dict[str, dict[str, Any]]:
     }
 
 
+def _format_user_config_comment(comment: str | None) -> str:
+    return f"  # {comment}" if comment else ""
+
+
+def _format_user_config_line(key: str, value: Any, comment: str | None) -> str:
+    return f"{key} = {_format_toml_value(value)}{_format_user_config_comment(comment)}"
+
+
 def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None) -> Path:
     """Persist the whitelisted user-facing configuration as TOML."""
     if config_path:
@@ -455,7 +514,8 @@ def save_user_config(config: AppConfig, config_path: Optional[str | Path] = None
         table_data = payload[table_name]
         lines.append(f"[{table_name}]")
         for key, value in table_data.items():
-            lines.append(f"{key} = {_format_toml_value(value)}")
+            comment = dict(_USER_CONFIG_TEMPLATES.get(table_name, [])).get(key)
+            lines.append(_format_user_config_line(key, value, comment))
         lines.append("")
 
     target_path.parent.mkdir(parents=True, exist_ok=True)

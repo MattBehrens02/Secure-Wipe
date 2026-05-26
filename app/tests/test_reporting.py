@@ -162,7 +162,7 @@ class TestJsonSerialization(unittest.TestCase):
     def test_wipe_report_to_json_valid_structure(self):
         json_str = wipe_report_to_json(self.report)
         parsed = json.loads(json_str)
-        self.assertEqual(parsed["app"]["name"], "Secure Wipe")
+        self.assertEqual(parsed["app"]["name"], "Secure-Wipe")
         self.assertEqual(parsed["app"]["version"], VERSION.app_version)
         self.assertEqual(parsed["wipe_status"]["status"], "success")
         self.assertEqual(parsed["operator_identifier"], "tech_john")
@@ -217,7 +217,7 @@ class TestTextFormatting(unittest.TestCase):
 
     def test_wipe_report_to_text_includes_headers(self):
         text = wipe_report_to_text(self.report)
-        self.assertIn("SECUREWIPE OPERATION REPORT", text)
+        self.assertIn("SECURE-WIPE OPERATION REPORT", text)
         self.assertIn("TIMESTAMP", text)
         self.assertIn("MACHINE INFORMATION", text)
         self.assertIn("DRIVE METADATA", text)
@@ -226,7 +226,7 @@ class TestTextFormatting(unittest.TestCase):
 
     def test_wipe_report_to_text_success_formatting(self):
         text = wipe_report_to_text(self.report)
-        self.assertIn(f"Secure Wipe v{VERSION.app_version}", text)
+        self.assertIn(f"Secure-Wipe v{VERSION.app_version}", text)
         self.assertIn("✓ SUCCESS", text)
 
     def test_wipe_report_to_text_minimal_omits_verbose_sections(self):

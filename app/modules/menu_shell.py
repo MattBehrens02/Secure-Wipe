@@ -18,6 +18,8 @@ MENU_OPTIONS = [
 	"Configuration",
     "Maintenance",
     "Open Terminal",
+    "Shutdown System",
+    "Restart System",
 ]
 
 
@@ -43,7 +45,7 @@ def print_line(width: int):
 
 def header(width: int):
     print_line(width)
-    _section_title(width, "SecureWipe Operations Console")
+    _section_title(width, "Secure-Wipe Operations Console")
     title = version.AppVersion.app_name + " - " + version.AppVersion.app_version
     _section_title(width, title)
     print_line(width)
@@ -133,7 +135,7 @@ def run():
             decided = True
             return -1
 
-        elif option in {"1", "2", "3", "4", "5", "6"}:
+        elif option in {"1", "2", "3", "4", "5", "6", "7", "8"}:
             decided = True
             return int(option)
 

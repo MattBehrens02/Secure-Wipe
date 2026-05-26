@@ -388,7 +388,7 @@ def _open_operator_shell(terminal_ui: TerminalUI) -> None:
 
 	terminal_ui.exit_alt_screen()
 	try:
-		print("Opening terminal. Type 'exit' to return to SecureWipe.")
+		print("Opening terminal. Type 'exit' to return to Secure-Wipe.")
 		completed = subprocess.run([shell], check=False)
 		if completed.returncode != 0:
 			print(f"Terminal exited with status {completed.returncode}.")
@@ -397,6 +397,33 @@ def _open_operator_shell(terminal_ui: TerminalUI) -> None:
 		app_logging.log_error(f"Operator shell launch failed: {exc}")
 	finally:
 		terminal_ui.enter_alt_screen()
+
+
+def _request_system_power_action(
+	action_label: str,
+	systemctl_action: str,
+	terminal_ui: TerminalUI,
+) -> bool:
+	print(f"{action_label} requested. Handing off to systemctl {systemctl_action}...")
+	app_logging.log_info(f"System {action_label.lower()} requested from main menu")
+	terminal_ui.exit_alt_screen()
+	try:
+		completed = subprocess.run(["systemctl", systemctl_action], check=False)
+	except OSError as exc:
+		print(f"Failed to {action_label.lower()} system: {exc}")
+		app_logging.log_error(f"System {action_label.lower()} failed to start: {exc}")
+		terminal_ui.enter_alt_screen()
+		return False
+
+	if completed.returncode != 0:
+		print(f"Failed to {action_label.lower()} system: systemctl exited with status {completed.returncode}.")
+		app_logging.log_error(
+			f"System {action_label.lower()} failed: systemctl {systemctl_action} exited with status {completed.returncode}"
+		)
+		terminal_ui.enter_alt_screen()
+		return False
+
+	return True
 
 
 def main(interactive: bool = False) -> int:
@@ -425,7 +452,7 @@ def main(interactive: bool = False) -> int:
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3, 4, 5, 6}:
+				if menu_choice not in {1, 2, 3, 4, 5, 6, 7, 8}:
 					print("Invalid menu selection.")
 					return 1
 
@@ -452,6 +479,30 @@ def main(interactive: bool = False) -> int:
 					if interactive_menu:
 						continue
 					return 0
+
+				if menu_choice == 7:
+					shutdown_started = _request_system_power_action(
+						"SHUTDOWN",
+						"poweroff",
+						terminal_ui,
+					)
+					if shutdown_started:
+						return 0
+					if interactive_menu:
+						continue
+					return 1
+
+				if menu_choice == 8:
+					restart_started = _request_system_power_action(
+						"RESTART",
+						"reboot",
+						terminal_ui,
+					)
+					if restart_started:
+						return 0
+					if interactive_menu:
+						continue
+					return 1
 
 				if menu_choice == 1:
 					pending_states = _pending_states(app_config)
