@@ -6,6 +6,7 @@ app/state/
 out/
 build/
 tmp/
+logs/
 
 # Python
 __pycache__/
