@@ -1,7 +1,7 @@
-# SecureWipe Operator Runbook
+# Secure-Wipe Operator Runbook
 
 ## Purpose
-This runbook describes the standard operator workflow for SecureWipe in both dry-run and controlled live-run modes.
+This runbook describes the standard operator workflow for Secure-Wipe in both dry-run and controlled live-run modes.
 
 ## Scope
 - Single-host operation from the project workspace.
@@ -9,7 +9,7 @@ This runbook describes the standard operator workflow for SecureWipe in both dry
 - Safe destructive-operation workflow with explicit confirmations.
 
 ## Goal Alignment
-This procedure directly supports practicum goals in `goal.txt`:
+This procedure directly supports the Secure-Wipe application goals:
 - Safe selective drive targeting
 - Cryptographic wipe workflow execution
 - Verification and reporting
@@ -33,13 +33,13 @@ This procedure directly supports practicum goals in `goal.txt`:
 - Keep `upload.enabled = false` unless upload target is configured and tested.
 
 ## Environment Notes
-SecureWipe is commonly run in a container where `/app` paths are valid.
+Secure-Wipe is commonly run in a container where `/app` paths are valid.
 If running from host/venv, ensure configured runtime directories are writable (`logs`, `reports`, `state`, `tmp`).
 
 ## Standard Operation Procedure
 1. Start in the project root.
 2. Verify configuration values in `configuration.toml`.
-3. Run SecureWipe.
+3. Run Secure-Wipe.
 4. Select one of the top-level menu actions:
 	 - Start Job
 	 - Restart Pending Jobs
@@ -47,6 +47,8 @@ If running from host/venv, ensure configured runtime directories are writable (`
 	 - Configuration
 	 - Maintenance
 	 - Open Terminal
+	 - Shutdown System
+	 - Restart System
 5. Complete confirmation prompts for destructive operations.
 6. Wait for wipe + verification completion.
 7. Confirm report output paths displayed by the application.
@@ -75,12 +77,20 @@ The Configuration submenu currently supports:
 - Toggle SMART collection
 - Toggle logging level (`info`/`errors`)
 - Cycle reporting detail level (`minimal`/`standard`/`verbose`)
+- Set operator identifier
 - Cycle container scrub pattern (for encrypted container write stage)
 - Cycle HDD final scrub pattern (for direct-device final HDD pass)
 
+## Maintenance Submenu Actions
+The Maintenance submenu currently supports:
+- Clear stale recovery lock
+- Clear all incomplete recovery states
+
+These actions require typing `CLEAR` to confirm when interactive.
+
 ## Open Terminal Action
 - From the main menu, choose `Open Terminal` to launch a local shell.
-- Type `exit` to return to SecureWipe.
+- Type `exit` to return to Secure-Wipe.
 - Use this for diagnostics and maintenance without disabling auto-start behavior.
 
 Configuration updates are persisted to `configuration.toml` after each successful change.
@@ -130,7 +140,7 @@ python3 -m unittest discover -s tests -v
 
 ### Alternate test entrypoint
 ```bash
-python3 run_tests.py
+python3 -m unittest tests.test_util_and_main -v
 ```
 
 ## Expected Artifacts
@@ -140,7 +150,7 @@ python3 run_tests.py
 - Recovery lock file (runtime): `state/wipe.lock`
 
 ## Recovery/Resume Behavior
-On startup, SecureWipe checks for resumable states.
+On startup, Secure-Wipe checks for resumable states.
 Operator choices:
 - Resume incomplete wipe
 - Start fresh and clear resumable states

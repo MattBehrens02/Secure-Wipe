@@ -379,7 +379,7 @@ def wipe_report_to_text(report: WipeReport, detail_level: str = "verbose") -> st
 	
 	# Header
 	lines.append("=" * 80)
-	lines.append(" " * 20 + "SECUREWIPE OPERATION REPORT")
+	lines.append(" " * 20 + "SECURE-WIPE OPERATION REPORT")
 	lines.append(f" " * 20 + f"{report.app_name} v{report.app_version}")
 	lines.append("=" * 80)
 	lines.append("")

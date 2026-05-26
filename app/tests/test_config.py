@@ -140,6 +140,11 @@ class TestConfig(unittest.TestCase):
         output_path = config.save_user_config(cfg, tmp_path)
         self.assertTrue(Path(output_path).exists())
 
+        saved_text = Path(output_path).read_text(encoding="utf-8")
+        self.assertIn('environment = "test"  # dev | test | prod', saved_text)
+        self.assertIn('confirmation_steps = 2  # 2 (recommended) | 1 | 0; 2 = multi-step confirmation [y]es/[n]o + type "WIPE" to confirm', saved_text)
+        self.assertIn('level = "errors"  # info | errors', saved_text)
+
         loaded = config.load_config(tmp_path)
         self.assertEqual(loaded.runtime.environment, "test")
         self.assertFalse(loaded.runtime.dry_run)

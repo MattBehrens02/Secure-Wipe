@@ -5,7 +5,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import main
+import app.main as main
 from modules import dir_check, header
 
 

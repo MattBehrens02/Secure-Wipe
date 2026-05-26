@@ -1,10 +1,9 @@
 # Program Directories
-app/logs/
-app/reports/
-app/tmp/
-app/state/
+logs/
+reports/
+tmp/
+state/
 out/
-build/
 
 # Python
 __pycache__/

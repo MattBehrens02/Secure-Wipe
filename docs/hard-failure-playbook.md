@@ -1,4 +1,4 @@
-# SecureWipe Hard-Failure Playbook
+# Secure-Wipe Hard-Failure Playbook
 
 ## Purpose
 This playbook provides incident response procedures for hard failures during detection, wipe, verification, recovery, and upload flows.
@@ -11,7 +11,7 @@ This playbook provides incident response procedures for hard failures during det
 ## Immediate Response Rules
 1. Stop additional wipe operations.
 2. Preserve logs and reports before modifying state.
-3. Do not manually run destructive commands outside SecureWipe unless explicitly required.
+3. Do not manually run destructive commands outside Secure-Wipe unless explicitly required.
 4. Capture exact error text and timestamp.
 
 ## Failure Scenario: Permission or Path Errors
@@ -54,11 +54,10 @@ This playbook provides incident response procedures for hard failures during det
 - Startup reports lock acquisition failure (`wipe.lock`).
 
 ### Actions
-1. Confirm no active SecureWipe process is running.
-2. If stale lock is suspected, wait for stale-threshold policy to expire and retry.
-3. Note: there is currently no dedicated operator cleanup command for stale lock/state maintenance.
-4. Use maintainer-approved manual cleanup only after evidence capture.
-5. Re-run and document lock metadata and elapsed age.
+1. Confirm no active Secure-Wipe process is running.
+2. If stale lock is suspected, use the **Maintenance** submenu action to clear stale lock entries.
+3. Use maintainer-approved manual cleanup only after evidence capture and if in-app maintenance cannot resolve the issue.
+4. Re-run and document lock metadata and elapsed age.
 
 ### Interim Manual Cleanup (Maintainer-Only)
 Use only when the process is confirmed inactive and evidence has been captured.
@@ -76,10 +75,12 @@ rm -f state/dev_sda.state.json
 
 Record every manual deletion in incident notes.
 
-### Future Work
-- Add explicit maintenance commands for stale lock/state cleanup.
-- Add guarded confirmation prompts and dry-run support for maintenance operations.
-3. Re-run and document lock metadata and elapsed age.
+### In-App Maintenance First
+Prefer these in-app actions before manual deletion:
+- Maintenance -> Clear stale recovery lock
+- Maintenance -> Clear all incomplete recovery states
+
+These actions prompt for `CLEAR` in interactive mode.
 
 ## Failure Scenario: Corrupted Recovery State
 ### Symptoms

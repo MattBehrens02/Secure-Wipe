@@ -154,7 +154,7 @@ class TestRecoveryLocking(unittest.TestCase):
                 "pid": 1,
                 "hostname": "host",
                 "created_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
-                "app_name": "Secure Wipe",
+                "app_name": "Secure-Wipe",
                 "app_version": "0.1.0",
             }
             lock_path.write_text(json.dumps(stale_payload), encoding="utf-8")
@@ -171,7 +171,7 @@ class TestRecoveryLocking(unittest.TestCase):
                 "pid": 1,
                 "hostname": "host",
                 "created_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
-                "app_name": "Secure Wipe",
+                "app_name": "Secure-Wipe",
                 "app_version": "0.1.0",
             }
             lock_path.write_text(json.dumps(stale_payload), encoding="utf-8")
@@ -189,7 +189,7 @@ class TestRecoveryLocking(unittest.TestCase):
                 "pid": 1,
                 "hostname": "host",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "app_name": "Secure Wipe",
+                "app_name": "Secure-Wipe",
                 "app_version": "0.1.0",
             }
             lock_path.write_text(json.dumps(payload), encoding="utf-8")
