@@ -98,6 +98,25 @@ class TestPowerMenu(unittest.TestCase):
 		self.assertEqual(rc, 0)
 		mock_view_logs.assert_called_once()
 
+	@patch("main.sys.stdin.isatty", return_value=True)
+	@patch("main.menu_shell.run", side_effect=[9, -1])
+	@patch("main.config.load_config", side_effect=ValueError("bad config"))
+	@patch("main.TerminalUI.from_config")
+	def test_main_recovers_with_safe_defaults_when_config_is_invalid(
+		self,
+		mock_ui_from_config,
+		_mock_load_config,
+		_mock_menu_run,
+		_mock_isatty,
+	):
+		mock_ui_from_config.return_value = Mock(interactive=True)
+
+		with patch.object(main, "_view_logs") as mock_view_logs:
+			rc = main.main(interactive=True)
+
+		self.assertEqual(rc, 0)
+		mock_view_logs.assert_called_once()
+
 
 if __name__ == "__main__":
 	unittest.main()

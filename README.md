@@ -269,6 +269,8 @@ chmod +x ./scripts/format-output-partition.sh
 
 If WSL cannot access USB disk, verify usbipd attach was run from Administrator PowerShell and re-check lsblk in WSL.
 
+If the update-preserve script reports `unknown filesystem type exfat`, the host does not have exFAT mount support available. Run it on a system with kernel exFAT support enabled, or install the appropriate exFAT mount support for that host before retrying.
+
 ## License
 
 To be determined.

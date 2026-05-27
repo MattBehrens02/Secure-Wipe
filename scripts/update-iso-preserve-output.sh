@@ -41,6 +41,18 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
+have_exfat_mount_support() {
+    grep -qx 'exfat' /proc/filesystems 2>/dev/null
+}
+
+mount_exfat_partition() {
+    if ! have_exfat_mount_support; then
+        fail "exfat mount support is not available on this host; install kernel exfat support before running this script"
+    fi
+
+    mount "$@"
+}
+
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
         fail "run this script as root (sudo)"
@@ -191,7 +203,7 @@ backup_output_data() {
     local backup_dir="$STAGING_DIR/backup"
 
     printf '[preserve] backing up data from %s\n' "$source_partition"
-    mount -o ro "$source_partition" "$STAGING_DIR/mount-old"
+    mount_exfat_partition -o ro "$source_partition" "$STAGING_DIR/mount-old"
     if [ -d "$STAGING_DIR/mount-old" ] && [ -n "$(ls -A "$STAGING_DIR/mount-old" 2>/dev/null || true)" ]; then
         cp -a "$STAGING_DIR/mount-old/." "$backup_dir/"
     fi
@@ -219,7 +231,7 @@ restore_output_data() {
     local backup_dir="$STAGING_DIR/backup"
 
     printf '[preserve] restoring data to %s\n' "$destination_partition"
-    mount "$destination_partition" "$STAGING_DIR/mount-new"
+    mount_exfat_partition "$destination_partition" "$STAGING_DIR/mount-new"
     if [ -d "$backup_dir" ] && [ -n "$(ls -A "$backup_dir" 2>/dev/null || true)" ]; then
         cp -a "$backup_dir/." "$STAGING_DIR/mount-new/"
     fi
@@ -240,7 +252,7 @@ verify_restore() {
     expected_files=$(cat "$STAGING_DIR/restore_expected_file_count")
     expected_bytes=$(cat "$STAGING_DIR/restore_expected_bytes")
 
-    mount -o ro "$destination_partition" "$STAGING_DIR/mount-new"
+    mount_exfat_partition -o ro "$destination_partition" "$STAGING_DIR/mount-new"
     restored_files=$(find "$STAGING_DIR/mount-new" -type f | wc -l)
     restored_bytes=$(du -sb "$STAGING_DIR/mount-new" | awk '{print $1}')
     umount "$STAGING_DIR/mount-new"
@@ -276,6 +288,7 @@ main() {
     require_cmd cp
     require_cmd find
     require_cmd du
+    have_exfat_mount_support || fail "exfat mount support is not available on this host; install kernel exfat support before running this script"
     validate_inputs
 
     local old_output_partition

@@ -1,5 +1,5 @@
 from modules import version
-from modules.config import load_config
+from modules.config import AppConfig
 from modules import recovery
 from modules.terminal import get_adaptive_menu_width
 from modules.time_utils import now_for_output_names
@@ -51,8 +51,8 @@ def header(width: int):
     _section_title(width, title)
     print_line(width)
 
-def environment_info(width: int):
-    config = load_config()
+def environment_info(width: int, app_config: AppConfig | None = None):
+    config = app_config if app_config is not None else AppConfig()
     dry_run = "ON" if config.runtime.dry_run else "OFF"
     upload_enabled = "ON" if config.upload.enabled else "OFF"
     logging_level = config.logging.level.upper()
@@ -109,24 +109,38 @@ def print_options(width: int):
 
     print_line(width)
 
-def print_menu():
+
+def print_alerts(width: int, alerts: list[str] | None):
+    if not alerts:
+        return
+
+    _section_title(width, "Alerts")
+    print_line(width)
+    for message in alerts:
+        _menu_row(width, f" ! {message}")
+    print_line(width)
+
+
+def print_menu(app_config: AppConfig | None = None, alerts: list[str] | None = None):
     width = _menu_width()
     header(width)
-    environment_info(width)
+    environment_info(width, app_config)
     print_options(width)
+    print_alerts(width, alerts)
 
 
-def _clear_if_prod() -> None:
-    cfg = load_config()
+def _clear_if_prod(app_config: AppConfig | None = None) -> None:
+    cfg = app_config if app_config is not None else AppConfig()
     if getattr(getattr(cfg, "runtime", object()), "environment", "dev") == "prod":
         subprocess.run(["clear"], check=False)
 
-def run():
+
+def run(app_config: AppConfig | None = None, alerts: list[str] | None = None):
     decided = False
     
     while not decided:
-        _clear_if_prod()
-        print_menu()
+        _clear_if_prod(app_config)
+        print_menu(app_config, alerts)
         option = input("  Select option: ")
 
         if option in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
