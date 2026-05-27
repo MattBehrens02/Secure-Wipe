@@ -50,6 +50,10 @@ require_dependencies() {
     require_cmd udevadm
     require_cmd wipefs
     require_cmd mkfs.exfat
+    require_cmd mount
+    require_cmd umount
+    require_cmd cp
+    require_cmd mkdir
 }
 
 have_cmd() {
@@ -173,6 +177,36 @@ format_data_partition() {
     "$formatter_script" --yes --partition "$partition_path" --label "$OUTPUT_LABEL" --filesystem "$OUTPUT_FILESYSTEM"
 }
 
+seed_docs_to_output_partition() {
+    local partition_path="$1"
+    local docs_source_dir="$REPO_ROOT/docs"
+    local temp_mount
+
+    if [ ! -d "$docs_source_dir" ]; then
+        printf '[usb] warning: docs directory not found at %s; skipping docs seed.\n' "$docs_source_dir"
+        return 0
+    fi
+
+    temp_mount=$(mktemp -d)
+    if mount "$partition_path" "$temp_mount" 2>/tmp/securewipe-seed-docs.err; then
+        mkdir -p "$temp_mount/docs"
+        cp -a "$docs_source_dir/." "$temp_mount/docs/"
+        sync
+        umount "$temp_mount"
+        rmdir "$temp_mount"
+        printf '[usb] seeded docs into output partition at docs/\n'
+        return 0
+    fi
+
+    if [ -f /tmp/securewipe-seed-docs.err ]; then
+        printf '[usb] warning: failed to mount %s for docs seed: %s\n' "$partition_path" "$(tr '\n' ';' </tmp/securewipe-seed-docs.err)"
+    else
+        printf '[usb] warning: failed to mount %s for docs seed\n' "$partition_path"
+    fi
+    rmdir "$temp_mount" 2>/dev/null || true
+    return 0
+}
+
 set_windows_partition_type() {
     local partition_path="$1"
     local partition_number
@@ -281,6 +315,7 @@ EOF
 
     printf '[usb] formatting data partition %s as %s\n' "$data_partition" "$OUTPUT_FILESYSTEM"
     format_data_partition "$data_partition"
+    seed_docs_to_output_partition "$data_partition"
 
     printf '[usb] done. boot partition written and data partition created.\n'
     printf '[usb] target: %s\n' "$TARGET_DEVICE"

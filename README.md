@@ -100,6 +100,7 @@ What this script does:
 3. Creates a new partition using remaining space
 4. Formats that partition as exfat with label SWOUTPUT
 5. Applies Windows-friendly GPT partition flags (when gdisk is available)
+6. Seeds `docs/` from this repository into the output partition at `docs/`
 
 You will be prompted to type WIPEUSB before destructive actions start.
 
