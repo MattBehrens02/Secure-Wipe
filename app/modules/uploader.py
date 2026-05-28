@@ -189,6 +189,15 @@ class GitUploader:
 
         for attempt in range(max_retries):
             try:
+                # Rebase local commits on the latest remote branch to reduce
+                # non-fast-forward push failures when multiple devices upload.
+                run_command(
+                    ["git", "-C", str(self.repo_path), "pull", "--rebase", "origin", self.branch],
+                    timeout=60,
+                    check=True,
+                    env=git_env,
+                )
+
                 run_command(
                     ["git", "-C", str(self.repo_path), "push", "origin", self.branch],
                     timeout=60,

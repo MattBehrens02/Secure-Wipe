@@ -143,6 +143,11 @@ class TestGitUploader(unittest.TestCase):
         result = self.uploader.push_to_remote(max_retries=1)
 
         self.assertTrue(result)
+        self.assertEqual(mock_run.call_count, 2)
+        first_cmd = mock_run.call_args_list[0][0][0]
+        second_cmd = mock_run.call_args_list[1][0][0]
+        self.assertEqual(first_cmd[:5], ["git", "-C", str(self.repo_path), "pull", "--rebase"])
+        self.assertEqual(second_cmd[:4], ["git", "-C", str(self.repo_path), "push"])
 
     @patch("modules.uploader.time.sleep")  # Mock sleep to avoid delays
     @patch("modules.uploader.run_command")
@@ -151,20 +156,28 @@ class TestGitUploader(unittest.TestCase):
         git_dir = self.repo_path / ".git"
         git_dir.mkdir(parents=True, exist_ok=True)
 
-        # First two calls fail with network error, third succeeds
-        from modules.uploader import UploadError as TerminalUploadError
+        # Each attempt runs pull --rebase then push. Simulate first two pushes
+        # failing with network errors, then succeeding on third attempt.
         from modules.terminal import CommandRunnerError
 
-        mock_run.side_effect = [
-            CommandRunnerError("network: Connection refused"),
-            CommandRunnerError("network: Temporary failure in name resolution"),
-            MagicMock(returncode=0),
-        ]
+        push_attempts = {"count": 0}
+
+        def side_effect(cmd, **_kwargs):
+            if "push" in cmd:
+                push_attempts["count"] += 1
+                if push_attempts["count"] == 1:
+                    raise CommandRunnerError("network: Connection refused")
+                if push_attempts["count"] == 2:
+                    raise CommandRunnerError("network: Temporary failure in name resolution")
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = side_effect
 
         result = self.uploader.push_to_remote(max_retries=3)
 
         self.assertTrue(result)
-        self.assertEqual(mock_run.call_count, 3)
+        # 3 attempts x (pull + push)
+        self.assertEqual(mock_run.call_count, 6)
 
     @patch("modules.uploader.run_command")
     def test_push_to_remote_fails_on_non_network_error(self, mock_run):
@@ -179,7 +192,7 @@ class TestGitUploader(unittest.TestCase):
         result = self.uploader.push_to_remote(max_retries=3)
 
         self.assertFalse(result)
-        # Should only attempt once (no retry on non-network error)
+        # Should only attempt once (no retry on non-network error), failing on pull.
         self.assertEqual(mock_run.call_count, 1)
 
 
