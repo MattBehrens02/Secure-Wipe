@@ -58,6 +58,32 @@ Notes:
 - gdisk is optional but recommended so the USB installer can set GPT hints for better Windows behavior.
 - You must run the build and USB installer scripts with sudo.
 
+## Minimum Requirements
+
+The tables below separate the host used to build and write the ISO from the machine that boots the live USB.
+
+### Installer Host
+
+| Item | Minimum | Notes |
+|---|---:|---|
+| OS | Linux or WSL | Used to build the ISO and write it to USB |
+| Privileges | sudo/root | The build and installer scripts require elevated privileges |
+| CPU architecture | amd64/x86_64 | The generated live ISO is amd64-based |
+| RAM | 2 GB | Enough for the build tooling on a minimal host |
+| USB tooling | present | `debootstrap`, GRUB tools, `xorriso`, `squashfs-tools`, `parted`, `util-linux`, `udev`, and `exfatprogs` |
+| Optional tooling | gdisk | Recommended for Windows-friendly GPT hints |
+| USB stick size | 2 GB minimum recommended | The live ISO is under 500 MB and the remaining space is enough for roughly 1.5 GB of persistent storage |
+
+### Wipe Station
+
+| Item | Minimum | Notes |
+|---|---:|---|
+| Boot support | USB boot capable system | The target machine must be able to boot the live ISO from USB |
+| CPU architecture | amd64/x86_64 | The live environment is built for amd64 |
+| RAM | 2 GB | Sufficient for the terminal-based live workflow |
+| USB stick size | 2 GB minimum recommended | Leaves room for the live ISO plus persistent reports, logs, and state |
+| Persistent storage | About 1.5 GB usable | Reports are only a few KB each, so most of the space is for logs and state rather than output files |
+
 ## Build ISO (Native Linux or WSL)
 
 From the repository root:
