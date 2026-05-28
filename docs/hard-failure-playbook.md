@@ -152,7 +152,7 @@ Record every manual deletion in incident notes.
 Collect and retain:
 - Timestamp (UTC)
 - Hostname/environment
-- Command used (`python3 main.py`)
+- Command used (`PYTHONPATH=.:./app python3 app/main.py`)
 - Full traceback or terminal error block
 - Relevant log excerpt (`logs/YYYY-MM-DD.log`)
 - Report files (JSON/TXT) when available

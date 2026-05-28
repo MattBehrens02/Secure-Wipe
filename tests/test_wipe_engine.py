@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from modules.wipe_engine import WipeEngine
 
@@ -66,6 +66,8 @@ class TestWipeEngine(unittest.TestCase):
         mock_run.assert_called_once_with(
             ["dd", "if=/dev/urandom", "of=/tmp/securewipe.key", "bs=1M", "count=4"],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_create_luks2_container_invokes_expected_command(self):
@@ -86,6 +88,8 @@ class TestWipeEngine(unittest.TestCase):
                 "/dev/sdz",
             ],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_open_encrypted_container_invokes_expected_command(self):
@@ -104,6 +108,8 @@ class TestWipeEngine(unittest.TestCase):
                 "wipe_sdz",
             ],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_write_across_encrypted_drive_invokes_expected_command(self):
@@ -113,9 +119,33 @@ class TestWipeEngine(unittest.TestCase):
             engine._write_across_encrypted_drive()
 
         mock_run.assert_called_once_with(
-            ["scrub", "-f", "-p", "nnsa", "/dev/mapper/wipe_sdz"],
+            ["scrub", "-f", "-p", "fillzero", "/dev/mapper/wipe_sdz"],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
+
+    def test_execute_with_recovery_applies_configured_scrub_patterns(self):
+        engine = WipeEngine(self.drive, dry_run=True)
+        cfg = SimpleNamespace(
+            wipe=SimpleNamespace(container_scrub_pattern="nnsa", hdd_final_scrub_pattern="dod"),
+            recovery=SimpleNamespace(
+                checkpoint_interval_seconds=60,
+                max_resume_attempts=3,
+                resume_state_max_age_seconds=86400,
+                allow_failed_resume=False,
+            ),
+            paths=SimpleNamespace(state_dir="/tmp/state"),
+        )
+
+        with patch("modules.wipe_engine.recovery.load_state", return_value=None), \
+             patch("modules.wipe_engine.recovery.save_state"), \
+             patch("modules.wipe_engine.recovery.clear_state"), \
+             patch.object(engine, "_execute_internal", return_value=SimpleNamespace(status="dry_run")):
+            engine.execute_with_recovery(cfg)
+
+        self.assertEqual(engine._container_scrub_pattern, "nnsa")
+        self.assertEqual(engine._hdd_final_scrub_pattern, "dod")
 
     def test_close_encrypted_container_invokes_expected_command(self):
         engine = WipeEngine(self.drive, dry_run=False)
@@ -126,6 +156,8 @@ class TestWipeEngine(unittest.TestCase):
         mock_run.assert_called_once_with(
             ["cryptsetup", "close", "wipe_sdz"],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_destroy_luks2_container_invokes_expected_command(self):
@@ -135,8 +167,10 @@ class TestWipeEngine(unittest.TestCase):
             engine._destroy_luks2_container()
 
         mock_run.assert_called_once_with(
-            ["cryptsetup", "erase", "/dev/sdz"],
+            ["cryptsetup", "erase", "--batch-mode", "/dev/sdz"],
             check=True,
+            timeout=120,
+            progress_callback=ANY,
         )
 
     def test_remove_residual_signatures_invokes_expected_command(self):
@@ -148,6 +182,8 @@ class TestWipeEngine(unittest.TestCase):
         mock_run.assert_called_once_with(
             ["wipefs", "--all", "--force", "/dev/sdz"],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_internal_run_step_command_skips_execution_in_dry_run(self):
@@ -200,6 +236,8 @@ class TestWipeEngine(unittest.TestCase):
         mock_run.assert_called_once_with(
             ["scrub", "-f", "-p", "fillzero", "/dev/sdz"],
             check=True,
+            timeout=None,
+            progress_callback=ANY,
         )
 
     def test_execute_returns_structured_failure_result_when_step_raises(self):

@@ -1,33 +1,36 @@
 import sys
+import os
+import subprocess
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
-from modules import config, drive_detection, recovery, reporting, uploader, verification, wipe_engine, header, dir_check, menu_shell
+from modules import config, drive_detection, recovery, reporting, uploader, wipe_engine, dir_check, menu_shell
 from modules import smartctl
 from modules import app_logging
 from modules.terminal import TerminalUI
 
 
-SUBMENU_WIDTH = 80
 REPORTS_PAGE_SIZE = 20
 
 
-def _submenu_line() -> None:
-	print("+" + "-" * (SUBMENU_WIDTH - 2) + "+")
+def _append_menu_alert(menu_alerts: list[str], message: str) -> None:
+	text = str(message).strip()
+	if not text:
+		return
+	if text in menu_alerts:
+		return
+	menu_alerts.append(text)
+	if len(menu_alerts) > 5:
+		del menu_alerts[0]
 
 
-def _print_submenu(title: str, options: list[str], footer: str) -> None:
-	_submenu_line()
-	title_content = f" {title} "
-	title_padding = max(0, (SUBMENU_WIDTH - 2 - len(title_content)) // 2)
-	print("|" + " " * title_padding + title_content.ljust(SUBMENU_WIDTH - 2 - title_padding) + "|")
-	_submenu_line()
-	for index, option in enumerate(options, start=1):
-		label = f" [{index}] {option}"
-		print("|" + label.ljust(SUBMENU_WIDTH - 2) + "|")
-	_submenu_line()
-	print("|" + f" {footer}".ljust(SUBMENU_WIDTH - 2) + "|")
-	_submenu_line()
+def _load_runtime_config() -> tuple[config.AppConfig, str | None]:
+	try:
+		return config.load_config(), None
+	except (ValueError, tomllib.TOMLDecodeError, OSError) as exc:
+		fallback = config.AppConfig()
+		return fallback, f"Configuration error: {exc}. Using safe defaults until configuration is fixed."
 
 
 def _recovery_settings(app_config):
@@ -81,19 +84,20 @@ def _select_restart_drive(app_config, terminal_ui: TerminalUI) -> list[object] |
 
 	choices = [f"Resume {state.drive_path}" for state in resume_candidates_sorted]
 	while True:
-		_print_submenu("Pending Jobs", choices, "Enter number or R to return")
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
+		menu_shell.print_submenu("Pending Jobs", choices, "Enter number or B/R to return")
 		if not terminal_ui.interactive:
 			selected_index = 0
 			break
 		user_input = input("Select pending job: ").strip()
-		if user_input.lower() == "r":
+		action, selected_index = menu_shell.parse_submenu_input(user_input, len(choices), allow_paging=False)
+		if action == "back":
 			app_logging.log_info("User returned to main menu from pending restart list")
 			return None
-		if user_input.isdigit():
-			selected_index = int(user_input) - 1
-			if 0 <= selected_index < len(choices):
-				break
-		print("Invalid selection. Enter a listed number or R.")
+		if action == "select" and selected_index is not None:
+			break
+		print("Invalid selection. Enter a listed number or B/R.")
 
 	selected_state = resume_candidates_sorted[selected_index]
 	metadata = selected_state.metadata if isinstance(selected_state.metadata, dict) else {}
@@ -129,12 +133,14 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 	page_index = 0
 	page_count = max(1, (len(report_paths) + REPORTS_PAGE_SIZE - 1) // REPORTS_PAGE_SIZE)
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
 		start = page_index * REPORTS_PAGE_SIZE
 		end = start + REPORTS_PAGE_SIZE
 		page_reports = report_paths[start:end]
 		options = [path.name for path in page_reports]
-		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P to navigate, R to return"
-		_print_submenu("Report Viewer", options, footer)
+		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P page, B/R return"
+		menu_shell.print_submenu("Report Viewer", options, footer)
 
 		if not terminal_ui.interactive:
 			if not page_reports:
@@ -142,24 +148,20 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 			selected_path = page_reports[0]
 		else:
 			user_input = input("Select report: ").strip()
-			lowered = user_input.lower()
-			if lowered == "r":
+			action, selected_index = menu_shell.parse_submenu_input(user_input, len(page_reports), allow_paging=True)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from report viewer")
 				return
-			if lowered == "n":
+			if action == "next_page":
 				if page_index < page_count - 1:
 					page_index += 1
 				continue
-			if lowered == "p":
+			if action == "prev_page":
 				if page_index > 0:
 					page_index -= 1
 				continue
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number, N, P, or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(page_reports):
-				print("Invalid selection. Enter a number from the current page.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number, N/P for pages, or B/R to return.")
 				continue
 			selected_path = page_reports[selected_index]
 
@@ -177,54 +179,155 @@ def _view_reports(app_config, terminal_ui: TerminalUI) -> None:
 			input("Press Enter to return to report list (or R at menu to exit)...")
 
 
-def _configure_settings(app_config, terminal_ui: TerminalUI):
+def _list_log_files(logs_dir: str) -> list[Path]:
+	log_dir_path = Path(logs_dir)
+	if not log_dir_path.exists():
+		return []
+	return sorted(
+		[path for path in log_dir_path.iterdir() if path.is_file()],
+		key=lambda path: path.stat().st_mtime,
+		reverse=True,
+	)
+
+
+def _open_log_with_pager(log_path: Path, terminal_ui: TerminalUI) -> None:
+	pager = os.environ.get("PAGER", "less")
+	terminal_ui.exit_alt_screen()
+	try:
+		completed = subprocess.run([pager, str(log_path)], check=False)
+		if completed.returncode != 0 and pager != "more":
+			subprocess.run(["more", str(log_path)], check=False)
+	except OSError as exc:
+		print(f"Failed to open pager for {log_path.name}: {exc}")
+		app_logging.log_error(f"Log pager open failed path={log_path} error={exc}")
+	finally:
+		terminal_ui.enter_alt_screen()
+
+
+def _view_logs(app_config, terminal_ui: TerminalUI) -> None:
+	logs_dir = getattr(getattr(app_config, "paths", object()), "logs_dir", "./logs")
+	log_paths = _list_log_files(logs_dir)
+
+	if not log_paths:
+		print(f"No logs found in {logs_dir}.")
+		app_logging.log_info(f"Log viewer opened with no logs in {logs_dir}")
+		return
+
+	page_index = 0
+	page_count = max(1, (len(log_paths) + REPORTS_PAGE_SIZE - 1) // REPORTS_PAGE_SIZE)
 	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
+		start = page_index * REPORTS_PAGE_SIZE
+		end = start + REPORTS_PAGE_SIZE
+		page_logs = log_paths[start:end]
+		options = [path.name for path in page_logs]
+		footer = f"Page {page_index + 1}/{page_count} - number to view, N/P page, B/R return"
+		menu_shell.print_submenu("Log Viewer", options, footer)
+
+		if not terminal_ui.interactive:
+			if not page_logs:
+				return
+			selected_path = page_logs[0]
+		else:
+			user_input = input("Select log: ").strip()
+			action, selected_index = menu_shell.parse_submenu_input(user_input, len(page_logs), allow_paging=True)
+			if action == "back":
+				app_logging.log_info("User returned to main menu from log viewer")
+				return
+			if action == "next_page":
+				if page_index < page_count - 1:
+					page_index += 1
+				continue
+			if action == "prev_page":
+				if page_index > 0:
+					page_index -= 1
+				continue
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number, N/P for pages, or B/R to return.")
+				continue
+			selected_path = page_logs[selected_index]
+
+		app_logging.log_info(f"User opened log file in viewer path={selected_path}")
+		_open_log_with_pager(selected_path, terminal_ui)
+
+
+def _configure_settings(app_config, terminal_ui: TerminalUI):
+	wipe_cfg = getattr(app_config, "wipe", None)
+	if wipe_cfg is None:
+		wipe_cfg = SimpleNamespace(container_scrub_pattern="fillzero", hdd_final_scrub_pattern="fillzero")
+		app_config.wipe = wipe_cfg
+
+	reporting_cfg = getattr(app_config, "reporting", None)
+	if reporting_cfg is None:
+		reporting_cfg = SimpleNamespace(detail_level="verbose", operator_identifier="unknown")
+		app_config.reporting = reporting_cfg
+	elif not hasattr(reporting_cfg, "operator_identifier"):
+		reporting_cfg.operator_identifier = "unknown"
+
+	pattern_order = ["fillzero", "random", "nnsa", "dod"]
+	valid_log_levels = {"info", "errors"}
+
+	def _warn_prefix(condition: bool) -> str:
+		return "! " if condition else ""
+
+	def _cycle_pattern(current_value: str) -> str:
+		current_normalized = str(current_value).strip().lower()
+		if current_normalized not in pattern_order:
+			return pattern_order[0]
+		next_index = (pattern_order.index(current_normalized) + 1) % len(pattern_order)
+		return pattern_order[next_index]
+
+	while True:
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
+		dry_run_risky = not bool(app_config.runtime.dry_run)
+		upload_repo_missing = bool(app_config.upload.enabled) and not str(app_config.upload.repo or "").strip()
+		smart_unavailable = bool(app_config.drive_detection.collect_smart_info) and not smartctl.is_smartctl_available()
+		invalid_logging_level = str(app_config.logging.level).lower() not in valid_log_levels
+		invalid_report_detail = str(app_config.reporting.detail_level).lower() not in {"minimal", "standard", "verbose"}
 		choices = [
-			f"Toggle Dry Run (currently: {'ON' if app_config.runtime.dry_run else 'OFF'})",
-			f"Toggle Upload Enabled (currently: {'ON' if app_config.upload.enabled else 'OFF'})",
-			f"Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
-			f"Toggle Logging Level (currently: {app_config.logging.level.upper()})",
-			f"Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
+			f"{_warn_prefix(dry_run_risky)}Toggle Dry Run (currently: {'ON' if app_config.runtime.dry_run else 'OFF'})",
+			f"{_warn_prefix(upload_repo_missing)}Toggle Upload Enabled (currently: {'ON' if app_config.upload.enabled else 'OFF'})",
+			f"{_warn_prefix(smart_unavailable)}Toggle SMART Collection (currently: {'ON' if app_config.drive_detection.collect_smart_info else 'OFF'})",
+			f"{_warn_prefix(invalid_logging_level)}Toggle Logging Level (currently: {app_config.logging.level.upper()})",
+			f"{_warn_prefix(invalid_report_detail)}Cycle Report Detail Level (currently: {app_config.reporting.detail_level})",
+			f"Set Operator Identifier (currently: {app_config.reporting.operator_identifier})",
+			f"Cycle Container Scrub Pattern (currently: {wipe_cfg.container_scrub_pattern})",
+			f"Cycle HDD Final Pattern (currently: {wipe_cfg.hdd_final_scrub_pattern})",
 		]
-		_print_submenu("Configuration", choices, "Enter number or R to return")
+		if any((dry_run_risky, upload_repo_missing, smart_unavailable, invalid_logging_level, invalid_report_detail)):
+			print("! Marked options need attention before production runs.")
+		menu_shell.print_submenu("Configuration", choices, "Enter number or B/R to return")
 
 		if not terminal_ui.interactive:
 			selected_index = 0
 		else:
 			user_input = input("Select configuration action: ").strip()
-			if user_input.lower() == "r":
+			action, selected_index = menu_shell.parse_submenu_input(user_input, len(choices), allow_paging=False)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from configuration menu")
 				return app_config
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(choices):
-				print("Invalid selection. Enter a listed number or R.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number or B/R.")
 				continue
 
-		choice = choices[selected_index]
-
-		if choice.lower() == "r":
-			app_logging.log_info("User returned to main menu from configuration menu")
-			return app_config
-
-		if choice.startswith("Toggle Dry Run"):
+		if selected_index == 0:
 			app_config.runtime.dry_run = not app_config.runtime.dry_run
 			print(f"Dry run is now {'ON' if app_config.runtime.dry_run else 'OFF'}.")
-		elif choice.startswith("Toggle Upload Enabled"):
+		elif selected_index == 1:
 			app_config.upload.enabled = not app_config.upload.enabled
 			print(f"Upload is now {'ON' if app_config.upload.enabled else 'OFF'}.")
-		elif choice.startswith("Toggle SMART Collection"):
+		elif selected_index == 2:
 			app_config.drive_detection.collect_smart_info = not app_config.drive_detection.collect_smart_info
 			print(
 				"SMART collection is now "
 				f"{'ON' if app_config.drive_detection.collect_smart_info else 'OFF'}."
 			)
-		elif choice.startswith("Toggle Logging Level"):
+		elif selected_index == 3:
 			app_config.logging.level = "errors" if app_config.logging.level == "info" else "info"
 			print(f"Logging level is now {app_config.logging.level.upper()}.")
-		elif choice.startswith("Cycle Report Detail Level"):
+		elif selected_index == 4:
 			detail_levels = ["minimal", "standard", "verbose"]
 			current = app_config.reporting.detail_level
 			if current not in detail_levels:
@@ -232,6 +335,22 @@ def _configure_settings(app_config, terminal_ui: TerminalUI):
 			next_index = (detail_levels.index(current) + 1) % len(detail_levels)
 			app_config.reporting.detail_level = detail_levels[next_index]
 			print(f"Report detail level is now {app_config.reporting.detail_level}.")
+		elif selected_index == 5:
+			if not terminal_ui.interactive:
+				print("Operator identifier can only be set interactively.")
+				continue
+			new_value = input("Enter operator identifier: ").strip()
+			if not new_value:
+				print("Operator identifier cannot be empty.")
+				continue
+			app_config.reporting.operator_identifier = new_value
+			print(f"Operator identifier is now {app_config.reporting.operator_identifier}.")
+		elif selected_index == 6:
+			wipe_cfg.container_scrub_pattern = _cycle_pattern(wipe_cfg.container_scrub_pattern)
+			print(f"Container scrub pattern is now {wipe_cfg.container_scrub_pattern}.")
+		elif selected_index == 7:
+			wipe_cfg.hdd_final_scrub_pattern = _cycle_pattern(wipe_cfg.hdd_final_scrub_pattern)
+			print(f"HDD final scrub pattern is now {wipe_cfg.hdd_final_scrub_pattern}.")
 
 		try:
 			config.save_user_config(app_config)
@@ -250,21 +369,20 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 	]
 
 	while True:
-		_print_submenu("Maintenance", choices, "Enter number or R to return")
+		if getattr(getattr(app_config, "runtime", object()), "environment", "dev") == "prod":
+			terminal_ui.clear()
+		menu_shell.print_submenu("Maintenance", choices, "Enter number or B/R to return")
 
 		if not terminal_ui.interactive:
 			selected_index = 0
 		else:
 			user_input = input("Select maintenance action: ").strip()
-			if user_input.lower() == "r":
+			action, selected_index = menu_shell.parse_submenu_input(user_input, len(choices), allow_paging=False)
+			if action == "back":
 				app_logging.log_info("User returned to main menu from maintenance menu")
 				return
-			if not user_input.isdigit():
-				print("Invalid selection. Enter a number or R.")
-				continue
-			selected_index = int(user_input) - 1
-			if selected_index < 0 or selected_index >= len(choices):
-				print("Invalid selection. Enter a listed number or R.")
+			if action != "select" or selected_index is None:
+				print("Invalid selection. Enter a number or B/R.")
 				continue
 
 		confirmation = "CLEAR" if terminal_ui.interactive else "CLEAR"
@@ -287,32 +405,77 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 			app_logging.log_info(f"Maintenance cleared {cleared_count} incomplete recovery state(s)")
 
 
-def main(interactive: bool = False) -> int:
+def _open_operator_shell(terminal_ui: TerminalUI) -> None:
+	"""Temporarily drop to operator shell and return to app on exit."""
+	shell = os.environ.get("SHELL", "/bin/bash")
+
+	terminal_ui.exit_alt_screen()
 	try:
-		app_config = config.load_config()
-	except (ValueError, tomllib.TOMLDecodeError, OSError) as exc:
-		print(f"Configuration error: {exc}", file=sys.stderr)
-		return 1
+		print("Opening terminal. Type 'exit' to return to Secure-Wipe.")
+		completed = subprocess.run([shell], check=False)
+		if completed.returncode != 0:
+			print(f"Terminal exited with status {completed.returncode}.")
+	except OSError as exc:
+		print(f"Failed to open terminal: {exc}")
+		app_logging.log_error(f"Operator shell launch failed: {exc}")
+	finally:
+		terminal_ui.enter_alt_screen()
+
+
+def _request_system_power_action(
+	action_label: str,
+	systemctl_action: str,
+	terminal_ui: TerminalUI,
+) -> bool:
+	print(f"{action_label} requested. Handing off to systemctl {systemctl_action}...")
+	app_logging.log_info(f"System {action_label.lower()} requested from main menu")
+	terminal_ui.exit_alt_screen()
+	try:
+		completed = subprocess.run(["systemctl", systemctl_action], check=False)
+	except OSError as exc:
+		print(f"Failed to {action_label.lower()} system: {exc}")
+		app_logging.log_error(f"System {action_label.lower()} failed to start: {exc}")
+		terminal_ui.enter_alt_screen()
+		return False
+
+	if completed.returncode != 0:
+		print(f"Failed to {action_label.lower()} system: systemctl exited with status {completed.returncode}.")
+		app_logging.log_error(
+			f"System {action_label.lower()} failed: systemctl {systemctl_action} exited with status {completed.returncode}"
+		)
+		terminal_ui.enter_alt_screen()
+		return False
+
+	return True
+
+
+def main(interactive: bool = False) -> int:
+	menu_alerts: list[str] = []
+	app_config, startup_config_error = _load_runtime_config()
+	if startup_config_error:
+		print(startup_config_error, file=sys.stderr)
+		_append_menu_alert(menu_alerts, startup_config_error)
 
 	terminal_ui = TerminalUI.from_config(app_config)
 	interactive_menu = interactive and sys.stdin.isatty()
-	state_dir, lock_file_path, lock_stale_seconds, _resume_max_age_seconds, _allow_failed_resume = _recovery_settings(app_config)
+	startup_upload_flushed = False
 
 	terminal_ui.enter_alt_screen()
 	try:
 		while True:
 			action_success = True
 			selected_drives: list[object] = []
+			state_dir, lock_file_path, lock_stale_seconds, _resume_max_age_seconds, _allow_failed_resume = _recovery_settings(app_config)
 
 			while True:
 				menu_choice = 1
 				if interactive_menu:
-					menu_choice = menu_shell.run()
+					menu_choice = menu_shell.run(app_config=app_config, alerts=menu_alerts)
 
 				if menu_choice == -1:
 					print("Exiting...")
 					return 0
-				if menu_choice not in {1, 2, 3, 4, 5}:
+				if menu_choice not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
 					print("Invalid menu selection.")
 					return 1
 
@@ -324,12 +487,54 @@ def main(interactive: bool = False) -> int:
 
 				if menu_choice == 4:
 					app_config = _configure_settings(app_config, terminal_ui)
+					reloaded_config, reload_error = _load_runtime_config()
+					if reload_error:
+						_append_menu_alert(menu_alerts, reload_error)
+					else:
+						app_config = reloaded_config
+						menu_alerts = [message for message in menu_alerts if not message.startswith("Configuration error:")]
 					if interactive_menu:
 						continue
 					return 0
 
 				if menu_choice == 5:
 					_maintenance_menu(app_config, terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
+
+				if menu_choice == 6:
+					_open_operator_shell(terminal_ui)
+					if interactive_menu:
+						continue
+					return 0
+
+				if menu_choice == 7:
+					shutdown_started = _request_system_power_action(
+						"SHUTDOWN",
+						"poweroff",
+						terminal_ui,
+					)
+					if shutdown_started:
+						return 0
+					if interactive_menu:
+						continue
+					return 1
+
+				if menu_choice == 8:
+					restart_started = _request_system_power_action(
+						"RESTART",
+						"reboot",
+						terminal_ui,
+					)
+					if restart_started:
+						return 0
+					if interactive_menu:
+						continue
+					return 1
+
+				if menu_choice == 9:
+					_view_logs(app_config, terminal_ui)
 					if interactive_menu:
 						continue
 					return 0
@@ -357,19 +562,30 @@ def main(interactive: bool = False) -> int:
 				break
 
 			if app_config.drive_detection.collect_smart_info and not smartctl.is_smartctl_available():
-				print(
-					"Warning: SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable.",
-					file=sys.stderr,
-				)
+				smart_warning = "SMART collection is enabled but 'smartctl' is not installed; SMART data will be unavailable."
+				print(f"Warning: {smart_warning}", file=sys.stderr)
 				app_logging.log_error("SMART collection enabled but smartctl is unavailable")
+				_append_menu_alert(menu_alerts, smart_warning)
 
 			dir_check.ensure_runtime_directories(app_config)
 			app_logging.setup_logging(app_config)
+
+			if not startup_upload_flushed:
+				startup_upload_flushed = True
+				flushed = uploader.flush_pending_reports(
+					app_config,
+					dry_run=app_config.runtime.dry_run,
+				)
+				if not flushed:
+					print("Warning: pending report upload flush failed; queued reports will be retried later.")
+					app_logging.log_error("Startup pending report flush failed")
+					_append_menu_alert(menu_alerts, "Pending report upload flush failed at startup.")
 
 			lock_acquired, lock_error = recovery.acquire_lock(lock_file_path, stale_after_seconds=lock_stale_seconds)
 			if not lock_acquired:
 				print(f"Recovery lock error: {lock_error}", file=sys.stderr)
 				app_logging.log_error(f"Recovery lock acquisition failed path={lock_file_path} error={lock_error}")
+				_append_menu_alert(menu_alerts, f"Recovery lock error: {lock_error}")
 				action_success = False
 				if not interactive_menu:
 					return 1
@@ -393,6 +609,7 @@ def main(interactive: bool = False) -> int:
 				if selected_drives == []:
 					print("No drives detected.")
 					app_logging.log_error("No drives detected after selection flow")
+					_append_menu_alert(menu_alerts, "No drives detected during selection flow.")
 					action_success = False
 
 				for drive in selected_drives:
@@ -454,6 +671,7 @@ def main(interactive: bool = False) -> int:
 							report,
 							reports_dir,
 							detail_level=detail_level,
+							app_config=app_config,
 						)
 						print("\nWipe report saved:")
 						print(f"  JSON: {json_path}")
@@ -473,9 +691,11 @@ def main(interactive: bool = False) -> int:
 							action_success = False
 							print("Report upload: FAILED (reports retained locally for retry)")
 							app_logging.log_error(f"Report upload failed drive={drive.path}; reports retained locally")
+							_append_menu_alert(menu_alerts, f"Report upload failed for {drive.path}; retained for retry.")
 					except Exception as report_error:
 						action_success = False
 						app_logging.log_error(f"Failed to save wipe report: {report_error}")
+						_append_menu_alert(menu_alerts, f"Failed to save report for {drive.path}: {report_error}")
 			finally:
 				recovery.release_lock(lock_file_path)
 

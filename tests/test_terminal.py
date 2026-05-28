@@ -36,8 +36,16 @@ class TestTerminal(unittest.TestCase):
         with self.assertRaises(CommandRunnerError):
             run_command(["badcmd"], check=True)
 
-    @patch("modules.terminal.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="x", timeout=1))
-    def test_run_command_timeout(self, _mock_run):
+    @patch("modules.terminal.time.sleep", return_value=None)
+    @patch("modules.terminal.time.monotonic", side_effect=[0.0, 0.0, 1.2])
+    @patch("modules.terminal.subprocess.Popen")
+    def test_run_command_timeout(self, mock_popen, _mock_monotonic, _mock_sleep):
+        process = unittest.mock.Mock()
+        process.poll.side_effect = [None, None]
+        process.kill.return_value = None
+        process.communicate.return_value = ("", "")
+        mock_popen.return_value = process
+
         with self.assertRaises(CommandRunnerTimeout):
             run_command(["x"], timeout=1)
 
