@@ -1,0 +1,52 @@
+# Secure-Wipe user-facing configuration
+# Only a subset of settings are exposed here.
+# Internal defaults and safety baselines remain in modules/config.py.
+
+[paths]
+output_root = "/output"  # Optional persistent mount root for prod mode (e.g., /output)
+
+[runtime]
+environment = "prod"   # dev | test | prod
+dry_run = true
+timezone = "America/Edmonton"     # UTC | local | IANA zone (e.g., America/Chicago)
+
+[safety]
+# Safety modes for mounted and removable drives.
+# Use deny (recommended) by default, confirm for guarded exceptions,
+# or allow only in tightly controlled workflows.
+# Confirmation steps are for all operations, including dry runs, to ensure user awareness.
+removable_drive_mode = "deny"   # deny (recommended) | allow
+mount_handling_mode = "deny"   # deny (recommended) | allow
+confirmation_steps = 2          # 2 (recommended) | 1 | 0
+
+[drive_detection]
+collect_smart_info = true  # enabled by default; SMART collection is optional enrichment
+
+[recovery]
+checkpoint_interval_seconds = 60     # checkpoint cadence for long-running steps
+max_resume_attempts = 3              # max resume retries before restart is required
+lock_stale_seconds = 7200            # stale lock threshold (2 hours)
+resume_state_max_age_seconds = 86400 # offer resume for states updated within 24 hours
+allow_failed_resume = false          # resume interrupted by default; failed requires restart
+
+[wipe]
+# Scrub patterns passed to the `scrub -p <pattern>` command.
+# Common values: fillzero (fast single-pass), nnsa (harsher multi-pass).
+container_scrub_pattern = "fillzero"
+hdd_final_scrub_pattern = "fillzero"
+
+[reporting]
+formats = ["json", "txt"]  # json | txt
+detail_level = "standard"     # minimal | standard | verbose
+operator_identifier = "unknown"
+
+[upload]
+enabled = false  # Set to true to enable Git-based report upload
+repo = ""  # Git repository URL (e.g., git@github.com:user/private-repo.git)
+branch = "main"  # Branch to push reports to
+retry_count = 3  # Number of retry attempts on network failure
+ssh_private_key_path = ""  # Optional SSH private key path for git auth (e.g., /home/its/.ssh/id_ed25519)
+
+[logging]
+enabled = true       # true | false
+level = "errors"      # info | errors

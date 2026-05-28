@@ -1,8 +1,12 @@
 # Program Directories
-logs/
-reports/
+app/logs/
+app/reports/
+app/tmp/
+app/state/
+out/
+build/
 tmp/
-state/
+logs/
 
 # Python
 __pycache__/
@@ -28,6 +32,7 @@ wheels/
 MANIFEST
 .venv
 venv/
+.pytest_cache/
 
 # IDE
 .vscode/

@@ -1,0 +1,367 @@
+#!/bin/sh
+set -eu
+
+export PYTHONUNBUFFERED=1
+export TERM="${TERM:-linux}"
+
+OUTPUT_MOUNT="${OUTPUT_MOUNT:-/output}"
+VENTOY_LABEL="${VENTOY_LABEL:-Ventoy}"
+VENTOY_DEVICE="/dev/disk/by-label/${VENTOY_LABEL}"
+VENTOY_MOUNT="${VENTOY_MOUNT:-/mnt/ventoy}"
+OUTPUT_SUBDIR="${OUTPUT_SUBDIR:-secure-wipe-output}"
+
+OUTPUT_LABEL="${OUTPUT_LABEL:-SWOUTPUT}"
+OUTPUT_DEVICE="/dev/disk/by-label/${OUTPUT_LABEL}"
+MOUNT_WAIT_SECONDS="${MOUNT_WAIT_SECONDS:-20}"
+
+APP_CONFIG_PATH="${APP_CONFIG_PATH:-/opt/live-app/configuration.toml}"
+APP_TIMEZONE="${APP_TIMEZONE:-}"
+NETWORK_WAIT_SECONDS="${NETWORK_WAIT_SECONDS:-120}"
+NTP_SYNC_WAIT_SECONDS="${NTP_SYNC_WAIT_SECONDS:-120}"
+
+read_app_timezone() {
+	if [ ! -f "$APP_CONFIG_PATH" ] || ! command -v python3 >/dev/null 2>&1; then
+		return 1
+	fi
+
+	python3 - "$APP_CONFIG_PATH" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except Exception:
+    raise SystemExit(1)
+
+config_path = Path(sys.argv[1])
+try:
+    data = tomllib.loads(config_path.read_text())
+except Exception:
+    raise SystemExit(1)
+
+runtime_cfg = data.get("runtime", {})
+timezone_name = str(runtime_cfg.get("timezone", "UTC")).strip()
+if not timezone_name:
+    timezone_name = "UTC"
+
+print(timezone_name)
+PY
+}
+
+if [ -z "$APP_TIMEZONE" ]; then
+	APP_TIMEZONE="$(read_app_timezone 2>/dev/null || printf '%s' UTC)"
+fi
+
+configure_timezone() {
+	case "$APP_TIMEZONE" in
+		""|local|system)
+			return 0
+			;;
+	esac
+
+	if [ -n "$APP_TIMEZONE" ]; then
+		echo "$APP_TIMEZONE" >/etc/timezone 2>/dev/null || true
+	fi
+
+	if command -v timedatectl >/dev/null 2>&1; then
+		timedatectl set-timezone "$APP_TIMEZONE" >/dev/null 2>&1 || true
+	fi
+}
+
+wait_for_network() {
+	case "$NETWORK_WAIT_SECONDS" in
+		''|*[!0-9]*)
+			NETWORK_WAIT_SECONDS=120
+			;;
+	esac
+
+	if [ "$NETWORK_WAIT_SECONDS" -le 0 ]; then
+		return 0
+	fi
+
+	echo "[live] waiting up to ${NETWORK_WAIT_SECONDS}s for network..."
+	elapsed=0
+	while [ "$elapsed" -lt "$NETWORK_WAIT_SECONDS" ]; do
+		if command -v networkctl >/dev/null 2>&1; then
+			if networkctl is-online --quiet >/dev/null 2>&1; then
+				echo "[live] network online after ${elapsed}s"
+				return 0
+			fi
+		fi
+
+		if command -v ip >/dev/null 2>&1; then
+			if ip route show default 2>/dev/null | grep -q '^default '; then
+				echo "[live] default route detected after ${elapsed}s"
+				return 0
+			fi
+		fi
+
+		sleep 1
+		elapsed=$((elapsed + 1))
+	done
+
+	echo "[live] warning: network not ready after ${NETWORK_WAIT_SECONDS}s" >&2
+	return 1
+}
+
+enable_time_sync() {
+	if ! command -v timedatectl >/dev/null 2>&1; then
+		return 0
+	fi
+
+	# Ensure the NTP client is enabled each boot and nudge timesyncd to reconnect.
+	timedatectl set-ntp true >/dev/null 2>&1 || true
+	if command -v systemctl >/dev/null 2>&1; then
+		systemctl restart systemd-timesyncd.service >/dev/null 2>&1 || true
+	fi
+}
+
+wait_for_time_sync() {
+	if ! command -v timedatectl >/dev/null 2>&1; then
+		return 0
+	fi
+
+	case "$NTP_SYNC_WAIT_SECONDS" in
+		''|*[!0-9]*)
+			NTP_SYNC_WAIT_SECONDS=45
+			;;
+	esac
+
+	if [ "$NTP_SYNC_WAIT_SECONDS" -le 0 ]; then
+		return 0
+	fi
+
+	echo "[live] waiting up to ${NTP_SYNC_WAIT_SECONDS}s for NTP sync..."
+	elapsed=0
+	while [ "$elapsed" -lt "$NTP_SYNC_WAIT_SECONDS" ]; do
+		sync_state=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo "unknown")
+		if [ "$sync_state" = "yes" ]; then
+			echo "[live] NTP synchronized after ${elapsed}s"
+			return 0
+		fi
+		sleep 1
+		elapsed=$((elapsed + 1))
+	done
+
+	echo "[live] warning: NTP not synchronized after ${NTP_SYNC_WAIT_SECONDS}s" >&2
+	return 1
+}
+
+print_time_sync_status() {
+	current_time=$(date '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || echo "unknown")
+	timezone_name=$(cat /etc/timezone 2>/dev/null || echo "unknown")
+
+	echo "[live] time status: $current_time"
+	echo "[live] timezone: $timezone_name"
+
+	if command -v timedatectl >/dev/null 2>&1; then
+		npt_enabled=$(timedatectl show -p NTP --value 2>/dev/null || echo "unknown")
+		sync_state=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo "unknown")
+		echo "[live] timedatectl NTP enabled: $npt_enabled"
+		echo "[live] timedatectl synchronized: $sync_state"
+	fi
+}
+
+resolve_device_by_label() {
+	label="$1"
+	label_path="/dev/disk/by-label/$label"
+	if [ -e "$label_path" ]; then
+		resolved=$(readlink -f "$label_path" 2>/dev/null || true)
+		if [ -n "$resolved" ] && [ -b "$resolved" ]; then
+			printf '%s' "$resolved"
+			return 0
+		fi
+	fi
+
+	if command -v findfs >/dev/null 2>&1; then
+		resolved=$(findfs "LABEL=$label" 2>/dev/null || true)
+		if [ -n "$resolved" ] && [ -b "$resolved" ]; then
+			printf '%s' "$resolved"
+			return 0
+		fi
+	fi
+
+	if command -v blkid >/dev/null 2>&1; then
+		resolved=$(blkid -L "$label" 2>/dev/null || true)
+		if [ -n "$resolved" ] && [ -b "$resolved" ]; then
+			printf '%s' "$resolved"
+			return 0
+		fi
+	fi
+
+	return 1
+}
+
+resolve_ventoy_data_device() {
+	if ! command -v lsblk >/dev/null 2>&1; then
+		return 1
+	fi
+
+	lsblk -rpnbo PATH,TYPE,PKNAME,MODEL,FSTYPE,SIZE 2>/dev/null | awk '
+		BEGIN { IGNORECASE = 1; ventoy_disk = ""; best_device = ""; best_size = 0 }
+		$2 == "disk" && $4 ~ /ventoy/ { ventoy_disk = $1; next }
+		$2 == "part" && $3 == ventoy_disk {
+			fstype = tolower($5)
+			if (fstype != "" && fstype != "iso9660" && fstype != "udf" && fstype != "squashfs") {
+				size = $6 + 0
+				if (size > best_size) {
+					best_device = $1
+					best_size = size
+				}
+			}
+		}
+		END {
+			if (best_device != "") {
+				print best_device
+			}
+		}
+	' | while read -r candidate; do
+		if [ -b "$candidate" ]; then
+			printf '%s\n' "$candidate"
+			break
+		fi
+	done
+}
+
+wait_for_label_device() {
+	label="$1"
+	seconds="$2"
+	i=0
+	while [ "$i" -lt "$seconds" ]; do
+		device=$(resolve_device_by_label "$label")
+		if [ -n "${device:-}" ] && [ -e "$device" ]; then
+			printf '%s' "$device"
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 1
+	done
+	return 1
+}
+
+wait_for_ventoy_data_device() {
+	label="$1"
+	seconds="$2"
+	i=0
+	while [ "$i" -lt "$seconds" ]; do
+		device=$(resolve_device_by_label "$label")
+		if [ -n "${device:-}" ] && [ -e "$device" ]; then
+			printf '%s' "$device"
+			return 0
+		fi
+
+		device=$(resolve_ventoy_data_device)
+		if [ -n "${device:-}" ] && [ -e "$device" ]; then
+			printf '%s' "$device"
+			return 0
+		fi
+
+		i=$((i + 1))
+		sleep 1
+	done
+	return 1
+}
+
+mount_or_resolve_source() {
+	device="$1"
+	target_mount="$2"
+
+	if [ ! -b "$device" ]; then
+		echo "[live] mount error: candidate is not a block device: $device" >&2
+		return 1
+	fi
+
+	if mountpoint -q "$target_mount"; then
+		if findmnt -rn -T "$target_mount" -o OPTIONS 2>/dev/null | grep -q '(^|,)ro(,|$)'; then
+			mount -o remount,rw "$target_mount" 2>/tmp/securewipe-remount.err || true
+		fi
+		printf '%s' "$target_mount"
+		return 0
+	fi
+
+	existing_source=$(findmnt -rn -S "$device" -o TARGET 2>/dev/null || true)
+	if [ -n "$existing_source" ]; then
+		if findmnt -rn -T "$existing_source" -o OPTIONS 2>/dev/null | grep -q '(^|,)ro(,|$)'; then
+			mount -o remount,rw "$existing_source" 2>/tmp/securewipe-remount.err || true
+		fi
+		printf '%s' "$existing_source"
+		return 0
+	fi
+
+	if mount -o rw "$device" "$target_mount" 2>/tmp/securewipe-mount.err; then
+		printf '%s' "$target_mount"
+		return 0
+	fi
+
+	fstype=$(blkid -o value -s TYPE "$device" 2>/dev/null || true)
+	case "$fstype" in
+		exfat)
+			if mount -t exfat -o rw "$device" "$target_mount" 2>/tmp/securewipe-mount.err; then
+				printf '%s' "$target_mount"
+				return 0
+			fi
+			;;
+		ntfs|ntfs3)
+			if mount -t ntfs3 -o rw "$device" "$target_mount" 2>/tmp/securewipe-mount.err; then
+				printf '%s' "$target_mount"
+				return 0
+			fi
+			;;
+		vfat|fat|msdos)
+			if mount -t vfat -o rw "$device" "$target_mount" 2>/tmp/securewipe-mount.err; then
+				printf '%s' "$target_mount"
+				return 0
+			fi
+			;;
+	esac
+
+	if [ -f /tmp/securewipe-mount.err ]; then
+		echo "[live] mount error for $device: $(tr '\n' ';' </tmp/securewipe-mount.err)" >&2
+	fi
+
+	return 1
+}
+
+mkdir -p "$OUTPUT_MOUNT"
+
+if ! mountpoint -q "$OUTPUT_MOUNT"; then
+	if device=$(wait_for_ventoy_data_device "$VENTOY_LABEL" "$MOUNT_WAIT_SECONDS"); then
+		mkdir -p "$VENTOY_MOUNT"
+		if source_mount=$(mount_or_resolve_source "$device" "$VENTOY_MOUNT"); then
+			if mkdir -p "$source_mount/$OUTPUT_SUBDIR" 2>/tmp/securewipe-mkdir.err && mount --bind "$source_mount/$OUTPUT_SUBDIR" "$OUTPUT_MOUNT"; then
+				echo "[live] mounted persistent output folder $OUTPUT_SUBDIR from Ventoy data partition"
+			else
+				echo "[live] warning: failed to bind $source_mount/$OUTPUT_SUBDIR to $OUTPUT_MOUNT" >&2
+				if [ -f /tmp/securewipe-mkdir.err ]; then
+					echo "[live] mkdir error: $(tr '\n' ';' </tmp/securewipe-mkdir.err)" >&2
+				fi
+			fi
+		else
+			echo "[live] warning: failed to mount Ventoy device $device at $VENTOY_MOUNT" >&2
+		fi
+	fi
+fi
+
+if ! mountpoint -q "$OUTPUT_MOUNT"; then
+	if device=$(wait_for_label_device "$OUTPUT_LABEL" "$MOUNT_WAIT_SECONDS"); then
+		if mount -o rw "$device" "$OUTPUT_MOUNT"; then
+			echo "[live] mounted persistent output at $OUTPUT_MOUNT from label $OUTPUT_LABEL"
+		else
+			echo "[live] warning: failed to mount $device at $OUTPUT_MOUNT" >&2
+		fi
+	fi
+fi
+
+if ! mountpoint -q "$OUTPUT_MOUNT"; then
+	echo "[live] warning: no persistent output mount available; data may be ephemeral" >&2
+fi
+
+configure_timezone
+wait_for_network || true
+enable_time_sync
+wait_for_time_sync || true
+print_time_sync_status
+
+cd /opt/live-app
+exec /usr/bin/python3 /opt/live-app/main.py
+
