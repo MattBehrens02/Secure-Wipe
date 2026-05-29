@@ -218,7 +218,7 @@ lsblk -o NAME,SIZE,MODEL,SERIAL,TYPE
 Run installer from this repo:
 
 ```bash
-cd /home/mbehrens/projects/Secure-Wipe
+cd /home/[USERNAME]/projects/Secure-Wipe
 sudo ./scripts/install-iso-to-usb.sh out/secure-wipe-trixie-amd64.iso /dev/sdX
 ```
 
