@@ -76,6 +76,30 @@ The keys below are accepted from `configuration.toml`; unknown keys are rejected
 | `upload` | `enabled`, `repo`, `branch`, `retry_count`, `ssh_private_key_path` |
 | `logging` | `enabled`, `level` |
 
+### Wipe Pattern Values Exposed By The App
+
+Secure-Wipe currently cycles through exactly four scrub pattern values in the UI for both `wipe.container_scrub_pattern` and `wipe.hdd_final_scrub_pattern`:
+
+| Value | Intended Use |
+|-------|--------------|
+| `fillzero` | Default for encrypted container overwrite and fastest runs |
+| `random` | Single random pass when explicitly desired |
+| `nnsa` | Recommended final-pass choice for HDD workflows |
+| `dod` | Compliance-oriented option when DoD wording is required |
+
+Manual config is broader than the UI cycle. `app/modules/config.py` validates both wipe keys against the `scrub -p` allowlist and accepts:
+- `nnsa`, `dod`, `bsi`, `gutmann`, `schneier`, `pfitzner7`, `pfitzner33`, `usarmy`, `fillzero`, `fillff`, `random`, `random2`, `old`, `fastold`
+- `custom=<bytes>` for custom byte patterns
+
+Recommended device matrix:
+
+| Device / Goal | Container Pattern | HDD Final Pattern | Notes |
+|---------------|-------------------|-------------------|-------|
+| HDD baseline | `fillzero` | `nnsa` | Preferred general-purpose production setting |
+| HDD with policy-driven DoD requirement | `fillzero` | `dod` | Compliance choice, not the default technical recommendation |
+| SSD / NVMe | `fillzero` | `fillzero` | Prefer native sanitize or secure erase outside software overwrite |
+| Fast validation / shortest runtime | `fillzero` | `fillzero` | Simplest and fastest pattern pair |
+
 ### Reporting Detail-Level Behavior
 
 | Detail Level | JSON Output | Text Output | Notes |

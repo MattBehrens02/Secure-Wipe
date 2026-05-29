@@ -31,9 +31,11 @@ allow_failed_resume = false          # resume interrupted by default; failed req
 
 [wipe]
 # Scrub patterns passed to the `scrub -p <pattern>` command.
-# Common values: fillzero (fast single-pass), nnsa (harsher multi-pass).
+# UI-supported values: fillzero, random, nnsa, dod.
+# Manual config also accepts other scrub-supported patterns, plus custom=<bytes>.
+# Recommended baseline: fillzero for container overwrite, nnsa for final HDD pass.
 container_scrub_pattern = "fillzero"
-hdd_final_scrub_pattern = "fillzero"
+hdd_final_scrub_pattern = "nnsa"
 
 [reporting]
 formats = ["json", "txt"]  # json | txt

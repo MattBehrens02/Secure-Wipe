@@ -49,7 +49,7 @@ class RecoveryConfig:
 @dataclass
 class WipeConfig:
     container_scrub_pattern: str = "fillzero"
-    hdd_final_scrub_pattern: str = "fillzero"
+    hdd_final_scrub_pattern: str = "nnsa"
 
 @dataclass
 class ReportingConfig:
@@ -84,6 +84,23 @@ class AppConfig:
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configuration.toml"
+
+_SCRUB_SUPPORTED_PATTERNS: set[str] = {
+    "nnsa",
+    "dod",
+    "bsi",
+    "gutmann",
+    "schneier",
+    "pfitzner7",
+    "pfitzner33",
+    "usarmy",
+    "fillzero",
+    "fillff",
+    "random",
+    "random2",
+    "old",
+    "fastold",
+}
 
 _ALLOWED_TOML_KEYS: dict[str, set[str]] = {
     "paths": {"output_root"},
@@ -194,6 +211,15 @@ def _apply_wipe_overrides(config: AppConfig, wipe_data: dict[str, Any]) -> None:
         config.wipe.hdd_final_scrub_pattern = str(wipe_data["hdd_final_scrub_pattern"]).strip().lower()
 
 
+def _is_supported_scrub_pattern(value: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in _SCRUB_SUPPORTED_PATTERNS:
+        return True
+    if not normalized.startswith("custom="):
+        return False
+    return bool(normalized[len("custom="):].strip())
+
+
 def _reject_unknown_toml_keys(raw_data: dict[str, Any]) -> None:
     unknown_tables = set(raw_data.keys()) - set(_ALLOWED_TOML_KEYS.keys())
     if unknown_tables:
@@ -285,8 +311,11 @@ def _validate_config(config: AppConfig) -> None:
         normalized = str(scrub_pattern).strip().lower()
         if not normalized:
             raise ValueError(f"{key_name} must be a non-empty string")
-        if not normalized.replace("_", "").replace("-", "").isalnum():
-            raise ValueError(f"{key_name} may only contain letters, numbers, '_' or '-'")
+        if not _is_supported_scrub_pattern(normalized):
+            allowed_values = ", ".join(sorted(_SCRUB_SUPPORTED_PATTERNS))
+            raise ValueError(
+                f"{key_name} must be one of: {allowed_values}; or use custom=<pattern-bytes>"
+            )
 
     if not isinstance(config.logging.enabled, bool):
         raise ValueError("logging.enabled must be a boolean")
@@ -404,8 +433,8 @@ _USER_CONFIG_TEMPLATES: dict[str, list[tuple[str, str | None]]] = {
         ("allow_failed_resume", "resume interrupted by default; failed requires restart"),
     ],
     "wipe": [
-        ("container_scrub_pattern", "Common values: fillzero (fast single-pass), nnsa (harsher multi-pass)"),
-        ("hdd_final_scrub_pattern", "Common values: fillzero (fast single-pass), nnsa (harsher multi-pass)"),
+        ("container_scrub_pattern", "Recommended: fillzero for container overwrite; UI values: fillzero, random, nnsa, dod; manual config also accepts other scrub-supported patterns or custom=<bytes>."),
+        ("hdd_final_scrub_pattern", "Recommended: nnsa for final HDD pass; manual config accepts any scrub-supported pattern or custom=<bytes>"),
     ],
     "reporting": [
         ("formats", "json | txt"),
