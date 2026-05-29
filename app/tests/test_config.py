@@ -89,6 +89,36 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.load_config(tmp_path)
 
+    def test_rejects_unsupported_scrub_pattern(self):
+        toml_text = textwrap.dedent(
+            """
+            [wipe]
+            container_scrub_pattern = "totallymadeup"
+            """
+        )
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml") as tmp:
+            tmp.write(toml_text)
+            tmp_path = tmp.name
+
+        with self.assertRaisesRegex(ValueError, "wipe.container_scrub_pattern must be one of"):
+            config.load_config(tmp_path)
+
+    def test_accepts_scrub_supported_pattern_outside_ui_cycle(self):
+        toml_text = textwrap.dedent(
+            """
+            [wipe]
+            container_scrub_pattern = "schneier"
+            hdd_final_scrub_pattern = 'custom=\\xff\\x00'
+            """
+        )
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml") as tmp:
+            tmp.write(toml_text)
+            tmp_path = tmp.name
+
+        cfg = config.load_config(tmp_path)
+        self.assertEqual(cfg.wipe.container_scrub_pattern, "schneier")
+        self.assertEqual(cfg.wipe.hdd_final_scrub_pattern, "custom=\\xff\\x00")
+
     def test_prod_environment_overrides_paths_to_project_root(self):
         toml_text = "[runtime]\nenvironment = \"prod\"\n"
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml") as tmp:

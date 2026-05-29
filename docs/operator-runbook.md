@@ -111,10 +111,44 @@ Configuration updates are persisted to `configuration.toml` after each successfu
 | `runtime` | `timezone` | site timezone, for example `America/Edmonton` | Affects time display and output naming behavior |
 | `safety` | `confirmation_steps` | `2` | Additional destructive-operation confirmation prompts |
 | `wipe` | `container_scrub_pattern` | `fillzero` | Pattern used during encrypted container overwrite |
-| `wipe` | `hdd_final_scrub_pattern` | `fillzero` | Pattern used for final HDD pass |
+| `wipe` | `hdd_final_scrub_pattern` | `nnsa` for HDD workflows, `fillzero` otherwise | Pattern used for final HDD pass |
 | `reporting` | `detail_level` | `standard` for normal operations | Controls report depth and visibility of check names |
 | `upload` | `enabled` | `false` unless remote is validated | Enables queued Git report upload flow |
 | `upload` | `ssh_private_key_path` | empty unless SSH auth needed | Path to SSH key for Git operations |
+
+## Wipe Pattern Options
+
+The application UI currently exposes four scrub patterns for both wipe settings:
+
+| Pattern | Summary | Best Fit |
+|---------|---------|----------|
+| `fillzero` | Single-pass zero fill | Fast default, especially for encrypted container overwrite |
+| `random` | Single-pass random data | Use only when a single random pass is explicitly preferred |
+| `nnsa` | Four-pass method (`random`, `random`, `0x00`, verify) | Recommended software overwrite choice for HDD final passes |
+| `dod` | Four-pass DoD-style method (`random`, `0x00`, `0xff`, verify) | Policy-driven environments that require DoD wording |
+
+Manual `configuration.toml` edits may also use other `scrub`-supported patterns. Secure-Wipe now validates manual values against the underlying `scrub -p` allowlist and accepts:
+- `nnsa`, `dod`, `bsi`, `gutmann`, `schneier`, `pfitzner7`, `pfitzner33`, `usarmy`, `fillzero`, `fillff`, `random`, `random2`, `old`, `fastold`
+- `custom=<bytes>` for custom byte sequences supported by `scrub`
+
+## Recommended Wipe Pattern Matrix
+
+Use the matrix below when choosing between the four UI-supported patterns.
+
+| Device / Goal | `container_scrub_pattern` | `hdd_final_scrub_pattern` | Recommendation Rationale |
+|---------------|---------------------------|---------------------------|--------------------------|
+| HDD, standard operations | `fillzero` | `nnsa` | Container stage is encrypted, so zero writes become ciphertext on disk; final direct-device HDD pass should use the stronger multi-pass option |
+| HDD, policy requires DoD terminology | `fillzero` | `dod` | Use only when a customer or site policy explicitly calls for DoD-style wording |
+| SSD / NVMe | `fillzero` | `fillzero` | Prefer device-native sanitize or secure erase outside Secure-Wipe; software overwrite patterns are weaker assurance on flash media |
+| Fastest approved run | `fillzero` | `fillzero` | Minimizes elapsed time and keeps verification expectations simple |
+| Conservative software HDD wipe | `fillzero` | `nnsa` | Best balance of practicality and stronger overwrite behavior among the exposed options |
+
+Operational guidance:
+- Prefer `fillzero` for the encrypted container stage.
+- Prefer `nnsa` for the final pass on magnetic HDDs.
+- Use `dod` only when policy requires it.
+- For SSD/NVMe, using `fillzero` and skipping the HDD-only final overwrite is intentional to keep total writes down and avoid unnecessary flash wear.
+- Avoid treating any software overwrite pattern as the primary sanitization control for SSDs; rely on device-native sanitize workflows where available.
 
 ## Reporting Levels (What Changes)
 
