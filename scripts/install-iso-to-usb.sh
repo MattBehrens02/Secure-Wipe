@@ -100,7 +100,7 @@ confirm() {
     printf 'A new %s partition labeled %s will be created using all remaining space.\n' "$OUTPUT_FILESYSTEM" "$OUTPUT_LABEL"
     printf 'ALL DATA ON %s WILL BE LOST. Type WIPEUSB to continue: ' "$TARGET_DEVICE"
     read -r answer
-    [ "$answer" = "WIPEUSB" ] || fail "aborted"
+    [ "${answer^^}" = "WIPEUSB" ] || fail "aborted"
 }
 
 partition_paths() {

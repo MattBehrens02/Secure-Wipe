@@ -388,7 +388,7 @@ def _maintenance_menu(app_config, terminal_ui: TerminalUI) -> None:
 		confirmation = "CLEAR" if terminal_ui.interactive else "CLEAR"
 		if terminal_ui.interactive:
 			confirmation = input("Type CLEAR to confirm maintenance action (or anything else to cancel): ").strip()
-		if confirmation != "CLEAR":
+		if confirmation.lower() != "clear":
 			print("Maintenance action cancelled.")
 			continue
 
